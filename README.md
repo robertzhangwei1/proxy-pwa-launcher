@@ -73,9 +73,64 @@ This repo now includes:
 - `Dockerfile`
 - `.dockerignore`
 - `.env.example`
+- `fly.toml`
 
 That means you can deploy the backend to any container host that supports Node
 and Puppeteer, for example your own VPS or a managed container platform.
+
+## Fly.io setup
+
+This repo is now preconfigured for Fly.io with `fly.toml`.
+
+Fly docs I used:
+
+- [Deploy with a Dockerfile](https://fly.io/docs/languages-and-frameworks/dockerfile/)
+- [Deploy an app](https://fly.io/docs/launch/deploy/)
+- [App configuration (`fly.toml`)](https://fly.io/docs/reference/configuration/)
+- [Scale VM size and memory](https://fly.io/docs/flyctl/scale-vm/)
+
+Suggested low-cost starting shape for this Puppeteer backend:
+
+- `shared-cpu-1x`
+- `2 GB RAM`
+- `1 Machine`
+- `auto_stop_machines = "stop"` so it can scale down when idle
+
+### First deploy on Fly.io
+
+From this repo directory:
+
+```powershell
+fly launch --no-deploy
+fly scale count 1
+fly deploy
+```
+
+Why `fly scale count 1`:
+
+- Fly's docs note that a first deploy can create one or two Machines depending
+  on app configuration.
+- This project is a shared session backend, so starting with one Machine keeps
+  cost and behavior predictable.
+
+### After Fly creates your app
+
+Set the public backend URL in Fly so the server can report its real origin:
+
+```powershell
+fly secrets set PUBLIC_BASE_URL=https://<your-fly-app>.fly.dev
+```
+
+Then update `public/runtime-config.js` so the GitHub Pages PWA points to the
+shared backend automatically:
+
+```js
+window.PROXY_LAUNCHER_CONFIG = {
+  defaultBackendBaseUrl: "https://<your-fly-app>.fly.dev",
+};
+```
+
+Push that frontend change to GitHub Pages after the backend is live.
 
 ### Recommended environment variables
 
