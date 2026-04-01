@@ -1,28 +1,35 @@
-# Change `app` to your real Fly app name if this one is taken.
-app = "proxy-pwa-launcher-robertzhangwei1"
+# fly.toml app configuration file generated for proxy-pwa-launcher-robertzhangwei1 on 2026-04-01T20:46:27+08:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'proxy-pwa-launcher-robertzhangwei1'
+primary_region = 'ord'
+
+[build]
 
 [env]
-  HOST = "0.0.0.0"
-  PORT = "4317"
-  CORS_ALLOW_ORIGIN = "https://robertzhangwei1.github.io"
-  MAX_CONCURRENT_SESSIONS = "4"
-  SESSION_IDLE_TIMEOUT_MINUTES = "20"
-  SESSION_SWEEP_INTERVAL_MS = "60000"
+  CORS_ALLOW_ORIGIN = 'https://robertzhangwei1.github.io'
+  HOST = '0.0.0.0'
+  MAX_CONCURRENT_SESSIONS = '4'
+  PORT = '4317'
+  SESSION_IDLE_TIMEOUT_MINUTES = '20'
+  SESSION_SWEEP_INTERVAL_MS = '60000'
 
 [http_service]
   internal_port = 4317
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
   [[http_service.checks]]
-    grace_period = "20s"
-    interval = "30s"
-    method = "GET"
-    timeout = "5s"
-    path = "/api/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/api/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "2gb"
+  size = 'shared-cpu-1x'
+  memory = '2gb'
