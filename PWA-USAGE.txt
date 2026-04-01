@@ -1,0 +1,58 @@
+Proxy PWA Usage Guide
+
+Public install links
+- Android PWA: https://robertzhangwei1.github.io/proxy-pwa-launcher/android.html
+- iOS PWA: https://robertzhangwei1.github.io/proxy-pwa-launcher/ios.html
+
+What this app does
+- This PWA is a remote controller for a hosted Chromium browser running on Fly.io.
+- When you tap Launch Browser, the Fly.io backend starts a Chromium session.
+- That Chromium session is launched with the built-in iProyal proxy settings.
+- The network traffic from that hosted Chromium session goes through the proxy.
+
+What is routed through the proxy
+- Requests made by the hosted Chromium session on Fly.io.
+- The default page opened by the hosted browser.
+- Any subresources that the hosted Chromium session loads for that page, such as HTML, CSS, JavaScript, images, and API calls for that page.
+
+What is NOT routed through the proxy
+- The Safari, Chrome, or Edge tab on the phone that displays the PWA itself.
+- The phone's normal web browsing outside the hosted Chromium session.
+- The GitHub Pages files for the PWA user interface.
+
+Important limitation
+- The current simplified PWA is a one-tap launcher plus status and screenshot preview.
+- It does not currently provide full interactive remote browsing controls inside the phone.
+- In other words, the proxy-routed browser exists on the backend, and the phone app shows its status/preview.
+
+How to use it
+1. Open the Android or iPhone install link on the phone.
+2. Install the page as a PWA.
+3. Open the installed app.
+4. Tap Launch Browser.
+5. Wait for the status to change to Live browser.
+6. The screenshot preview shows the hosted browser session.
+7. Tap Refresh Preview if you want to pull a fresh screenshot.
+8. Tap Stop when you want to end that hosted browser session.
+
+How the routing works step by step
+1. The PWA sends a start request to https://proxy-pwa-launcher-robertzhangwei1.fly.dev.
+2. The backend reads the built-in proxy configuration stored on Fly.io.
+3. The backend launches Chromium with the iProyal proxy server.
+4. Chromium opens the default target page.
+5. That backend Chromium session makes its page requests through the proxy.
+6. The PWA then polls the backend for session status and screenshot preview.
+
+Per-user behavior
+- Each installed app keeps its own private session token in local storage.
+- Different users do not share the same browser session.
+- One user's launch, stop, and screenshot preview do not replace another user's session.
+
+Current default behavior
+- Launch Browser opens the backend Chromium session to the default target page.
+- The current default target page is https://www.google.com/.
+- The proxy configuration is already built into the backend, so the user does not need to type host, port, username, or password.
+
+If you want more later
+- If you want full interactive browsing from the phone, we can add remote navigation and action controls later.
+- If you want Launch Browser to open a different default website, we can change the backend default target URL.
