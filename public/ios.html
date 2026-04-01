@@ -51,6 +51,10 @@
           here, such as <code>https://your-helper.example.com</code>. If this
           page is being served directly by the backend, you can keep the default.
         </p>
+        <p class="hint">
+          Each installed app keeps a private session key on that device, so one
+          shared backend can safely serve many users at the same time.
+        </p>
         <div class="backend-connect">
           <label class="field">
             <span>Backend helper URL</span>
@@ -371,6 +375,7 @@
       </section>
     </main>
 
+    <script src="./runtime-config.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import express from "express";
 import fs from "fs/promises";
 import os from "os";
@@ -8,21 +9,48 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = Number(process.env.PORT || 4317);
+const PORT = parsePositiveInt(process.env.PORT, 4317);
 const HOST = process.env.HOST || "0.0.0.0";
 const PUBLIC_DIR = path.join(__dirname, "public");
-const USER_DATA_DIR = path.join(__dirname, "data", "chromium-profile");
-const PROXY_FETCH_TIMEOUT_MS = 20000;
+const SESSION_DATA_ROOT = path.join(__dirname, "data", "sessions");
+const PROXY_FETCH_TIMEOUT_MS = parsePositiveInt(
+  process.env.PROXY_FETCH_TIMEOUT_MS,
+  20_000
+);
+const SESSION_IDLE_TIMEOUT_MINUTES = parsePositiveInt(
+  process.env.SESSION_IDLE_TIMEOUT_MINUTES,
+  20
+);
+const SESSION_IDLE_TIMEOUT_MS = SESSION_IDLE_TIMEOUT_MINUTES * 60_000;
+const SESSION_SWEEP_INTERVAL_MS = parsePositiveInt(
+  process.env.SESSION_SWEEP_INTERVAL_MS,
+  60_000
+);
+const MAX_CONCURRENT_SESSIONS = parsePositiveInt(
+  process.env.MAX_CONCURRENT_SESSIONS,
+  10
+);
+const SESSION_TOKEN_HEADER = "x-launcher-token";
+const PUBLIC_BASE_URL = normalizeOptionalUrl(process.env.PUBLIC_BASE_URL);
+const CORS_ALLOWED_ORIGINS = parseAllowedOrigins(
+  process.env.CORS_ALLOW_ORIGIN || "*"
+);
+
+const sessions = new Map();
+let sweepInProgress = false;
 
 const app = express();
+app.set("trust proxy", true);
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  applyCorsHeaders(req, res);
 
   if (req.method === "OPTIONS") {
+    if (!originIsAllowed(req.get("origin"))) {
+      res.status(403).end();
+      return;
+    }
+
     res.status(204).end();
     return;
   }
@@ -33,18 +61,70 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(PUBLIC_DIR));
 
-const emptySession = () => ({
-  browser: null,
-  page: null,
-  launchedAt: null,
-  headless: true,
-  targetUrl: null,
-  proxy: null,
-  proxyMode: "direct",
-  proxyService: null,
-});
+function parsePositiveInt(rawValue, fallback) {
+  const parsed = Number(rawValue);
 
-let session = emptySession();
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function normalizeOptionalUrl(rawValue) {
+  const trimmed = String(rawValue || "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  let url;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return "";
+  }
+
+  return url.toString().replace(/\/$/, "");
+}
+
+function parseAllowedOrigins(rawValue) {
+  const origins = String(rawValue || "*")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return origins.length ? origins : ["*"];
+}
+
+function originIsAllowed(origin) {
+  if (!origin) {
+    return true;
+  }
+
+  return (
+    CORS_ALLOWED_ORIGINS.includes("*") || CORS_ALLOWED_ORIGINS.includes(origin)
+  );
+}
+
+function applyCorsHeaders(req, res) {
+  const origin = req.get("origin");
+
+  if (originIsAllowed(origin)) {
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      origin && !CORS_ALLOWED_ORIGINS.includes("*") ? origin : origin || "*"
+    );
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    `Content-Type, ${SESSION_TOKEN_HEADER}`
+  );
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+}
 
 function createHttpError(message, statusCode = 400) {
   const error = new Error(message);
@@ -66,15 +146,6 @@ function defaultPortForProtocol(protocol) {
   }
 
   return 80;
-}
-
-function isSessionActive() {
-  return Boolean(
-    session.browser &&
-      session.page &&
-      typeof session.page.isClosed === "function" &&
-      !session.page.isClosed()
-  );
 }
 
 function normalizeTargetUrl(rawUrl) {
@@ -111,7 +182,7 @@ function normalizeJsonObjectInput(rawValue, label) {
       throw new Error("Expected a JSON object.");
     }
     return parsed;
-  } catch (error) {
+  } catch {
     throw createHttpError(`${label} must be a valid JSON object.`);
   }
 }
@@ -363,10 +434,7 @@ function parseServiceBody(rawBody, contentType) {
     try {
       return JSON.parse(text);
     } catch {
-      throw createHttpError(
-        "Proxy service returned invalid JSON.",
-        502
-      );
+      throw createHttpError("Proxy service returned invalid JSON.", 502);
     }
   }
 
@@ -420,7 +488,7 @@ function normalizeProxyFromServicePayload(payload, responsePath) {
       if (proxy) {
         return proxy;
       }
-    } catch (error) {
+    } catch {
       // Keep scanning candidates until one matches a supported shape.
     }
   }
@@ -551,8 +619,224 @@ async function resolveProxySelection(body = {}) {
   };
 }
 
-function getAccessUrls() {
+function profileDirectoryForToken(token) {
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  return path.join(SESSION_DATA_ROOT, tokenHash);
+}
+
+function createSessionRecord(token) {
+  const now = new Date().toISOString();
+
+  return {
+    token,
+    browser: null,
+    page: null,
+    launchedAt: null,
+    headless: true,
+    targetUrl: null,
+    proxy: null,
+    proxyMode: "direct",
+    proxyService: null,
+    userDataDir: profileDirectoryForToken(token),
+    createdAt: now,
+    lastSeenAt: now,
+    lastActivityAt: null,
+  };
+}
+
+function resetSessionState(record) {
+  record.browser = null;
+  record.page = null;
+  record.launchedAt = null;
+  record.headless = true;
+  record.targetUrl = null;
+  record.proxy = null;
+  record.proxyMode = "direct";
+  record.proxyService = null;
+  record.lastActivityAt = null;
+}
+
+function isSessionActive(record) {
+  return Boolean(
+    record?.browser &&
+      record?.page &&
+      typeof record.page.isClosed === "function" &&
+      !record.page.isClosed()
+  );
+}
+
+function markSessionSeen(record) {
+  record.lastSeenAt = new Date().toISOString();
+}
+
+function markSessionActivity(record) {
+  const now = new Date().toISOString();
+  record.lastSeenAt = now;
+  record.lastActivityAt = now;
+}
+
+function sessionExpiryIso(record) {
+  const touchedAt = Date.parse(record.lastSeenAt || record.createdAt);
+
+  if (!Number.isFinite(touchedAt)) {
+    return null;
+  }
+
+  return new Date(touchedAt + SESSION_IDLE_TIMEOUT_MS).toISOString();
+}
+
+async function cleanupProfileDirectory(record) {
+  await fs.rm(record.userDataDir, { recursive: true, force: true }).catch(
+    () => {}
+  );
+}
+
+function countActiveSessions() {
+  let activeCount = 0;
+
+  for (const record of sessions.values()) {
+    if (isSessionActive(record)) {
+      activeCount += 1;
+    }
+  }
+
+  return activeCount;
+}
+
+async function stopSession(record, { removeRecord = false } = {}) {
+  const browser = record.browser;
+
+  resetSessionState(record);
+  markSessionSeen(record);
+
+  if (browser) {
+    try {
+      await browser.close();
+    } catch {
+      // Ignore shutdown errors during cleanup.
+    }
+  }
+
+  await cleanupProfileDirectory(record);
+
+  if (removeRecord) {
+    sessions.delete(record.token);
+  }
+}
+
+async function cleanupExpiredSessions() {
+  if (sweepInProgress) {
+    return;
+  }
+
+  sweepInProgress = true;
+
+  try {
+    const now = Date.now();
+    const expiredRecords = [];
+
+    for (const record of sessions.values()) {
+      const lastSeenAt = Date.parse(record.lastSeenAt || record.createdAt);
+
+      if (!Number.isFinite(lastSeenAt)) {
+        expiredRecords.push(record);
+        continue;
+      }
+
+      if (now - lastSeenAt >= SESSION_IDLE_TIMEOUT_MS) {
+        expiredRecords.push(record);
+      }
+    }
+
+    for (const record of expiredRecords) {
+      await stopSession(record, { removeRecord: true });
+    }
+  } finally {
+    sweepInProgress = false;
+  }
+}
+
+async function stopAllSessions() {
+  for (const record of [...sessions.values()]) {
+    await stopSession(record, { removeRecord: true });
+  }
+}
+
+function readSessionToken(req) {
+  const rawToken =
+    req.get(SESSION_TOKEN_HEADER) ||
+    req.query.sessionToken ||
+    req.body?.sessionToken;
+  const token = String(rawToken || "").trim();
+
+  if (!token) {
+    throw createHttpError(
+      "Session token missing. Reopen or refresh the installed PWA.",
+      400
+    );
+  }
+
+  if (token.length < 24 || token.length > 200) {
+    throw createHttpError("Session token is invalid.", 400);
+  }
+
+  if (!/^[A-Za-z0-9._:-]+$/.test(token)) {
+    throw createHttpError("Session token contains unsupported characters.", 400);
+  }
+
+  return token;
+}
+
+async function getSessionRecord(req) {
+  const token = readSessionToken(req);
+  await cleanupExpiredSessions();
+
+  let record = sessions.get(token);
+  if (!record) {
+    if (countActiveSessions() >= MAX_CONCURRENT_SESSIONS) {
+      throw createHttpError(
+        "The shared launcher is at capacity. Try again in a few minutes.",
+        503
+      );
+    }
+
+    record = createSessionRecord(token);
+    sessions.set(token, record);
+  }
+
+  markSessionSeen(record);
+  return record;
+}
+
+function requestOrigin(req) {
+  const host = req.get("x-forwarded-host") || req.get("host");
+
+  if (!host) {
+    return "";
+  }
+
+  const forwardedProto = req
+    .get("x-forwarded-proto")
+    ?.split(",")
+    .shift()
+    ?.trim();
+  const protocol = forwardedProto || req.protocol || "http";
+
+  return `${protocol}://${host}`;
+}
+
+function getAccessUrls(req) {
   const urls = new Set([`http://localhost:${PORT}`]);
+  const currentOrigin = requestOrigin(req);
+
+  if (PUBLIC_BASE_URL) {
+    urls.add(PUBLIC_BASE_URL);
+  }
+
+  if (currentOrigin) {
+    urls.add(currentOrigin);
+  }
+
   const interfaces = os.networkInterfaces();
 
   for (const addresses of Object.values(interfaces)) {
@@ -567,25 +851,31 @@ function getAccessUrls() {
   return Array.from(urls);
 }
 
-function getServerMeta() {
+function getServerMeta(req) {
   return {
     host: HOST,
     port: PORT,
-    accessUrls: getAccessUrls(),
+    publicBaseUrl: PUBLIC_BASE_URL || requestOrigin(req),
+    accessUrls: getAccessUrls(req),
+    sessionHeaderName: SESSION_TOKEN_HEADER,
+    sessionIdleTimeoutMinutes: SESSION_IDLE_TIMEOUT_MINUTES,
+    maxConcurrentSessions: MAX_CONCURRENT_SESSIONS,
     mobileNote:
-      "On mobile, the installed PWA is a control panel. The proxied browsing happens in the backend Chromium session, not inside the phone tab itself.",
+      "This mobile PWA is a control panel. The actual proxied browsing happens in backend Chromium sessions.",
+    sessionIsolationNote:
+      "Each installed app keeps a private session token on that device, so users do not share screenshots, tabs, or proxy state.",
   };
 }
 
-async function readSessionStatus() {
-  const active = isSessionActive();
+async function readSessionStatus(record) {
+  const active = isSessionActive(record);
   let title = null;
   let currentUrl = null;
 
   if (active) {
-    currentUrl = session.page.url();
+    currentUrl = record.page.url();
     try {
-      title = await session.page.title();
+      title = await record.page.title();
     } catch {
       title = null;
     }
@@ -593,33 +883,24 @@ async function readSessionStatus() {
 
   return {
     active,
-    launchedAt: session.launchedAt,
-    headless: session.headless,
-    targetUrl: session.targetUrl,
+    createdAt: record.createdAt,
+    launchedAt: record.launchedAt,
+    headless: record.headless,
+    targetUrl: record.targetUrl,
     currentUrl,
     title,
-    proxyMode: session.proxyMode,
-    proxy: redactProxy(session.proxy),
-    proxyService: redactProxyService(session.proxyService),
+    proxyMode: record.proxyMode,
+    proxy: redactProxy(record.proxy),
+    proxyService: redactProxyService(record.proxyService),
+    lastSeenAt: record.lastSeenAt,
+    lastActivityAt: record.lastActivityAt,
+    idleExpiresAt: sessionExpiryIso(record),
   };
 }
 
-async function stopSession() {
-  const browser = session.browser;
-  session = emptySession();
-
-  if (browser) {
-    try {
-      await browser.close();
-    } catch {
-      // Ignore shutdown errors during cleanup.
-    }
-  }
-}
-
-async function startSession({ targetUrl, headless, proxy, proxyMode, proxyService }) {
-  await stopSession();
-  await fs.mkdir(USER_DATA_DIR, { recursive: true });
+async function startSession(record, config) {
+  await stopSession(record);
+  await fs.mkdir(record.userDataDir, { recursive: true });
 
   const args = [
     "--start-maximized",
@@ -630,80 +911,106 @@ async function startSession({ targetUrl, headless, proxy, proxyMode, proxyServic
     "--disable-setuid-sandbox",
   ];
 
-  if (proxy) {
-    args.push(`--proxy-server=${proxyServerString(proxy)}`);
-    if (proxy.bypass) {
-      args.push(`--proxy-bypass-list=${proxy.bypass}`);
+  if (config.proxy) {
+    args.push(`--proxy-server=${proxyServerString(config.proxy)}`);
+    if (config.proxy.bypass) {
+      args.push(`--proxy-bypass-list=${config.proxy.bypass}`);
     }
   }
 
   const browser = await puppeteer.launch({
-    headless,
-    userDataDir: USER_DATA_DIR,
-    defaultViewport: headless ? { width: 430, height: 932 } : null,
-    protocolTimeout: 120000,
+    headless: config.headless,
+    userDataDir: record.userDataDir,
+    defaultViewport: config.headless ? { width: 430, height: 932 } : null,
+    protocolTimeout: 120_000,
     args,
   });
 
   browser.once("disconnected", () => {
-    if (session.browser === browser) {
-      session = emptySession();
+    const currentRecord = sessions.get(record.token);
+
+    if (!currentRecord || currentRecord.browser !== browser) {
+      return;
     }
+
+    resetSessionState(currentRecord);
+    markSessionSeen(currentRecord);
+    cleanupProfileDirectory(currentRecord).catch(() => {});
   });
 
   try {
     const [page] = await browser.pages();
     const activePage = page || (await browser.newPage());
 
-    if (proxy && (proxy.username || proxy.password)) {
+    if (config.proxy && (config.proxy.username || config.proxy.password)) {
       await activePage.authenticate({
-        username: proxy.username || "",
-        password: proxy.password || "",
+        username: config.proxy.username || "",
+        password: config.proxy.password || "",
       });
     }
 
     await activePage.setViewport({ width: 430, height: 932, isMobile: true });
-    await activePage.goto(targetUrl, {
+    await activePage.goto(config.targetUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 45000,
+      timeout: 45_000,
     });
 
-    session = {
-      browser,
-      page: activePage,
-      launchedAt: new Date().toISOString(),
-      headless,
-      targetUrl,
-      proxy,
-      proxyMode,
-      proxyService,
-    };
+    record.browser = browser;
+    record.page = activePage;
+    record.launchedAt = new Date().toISOString();
+    record.headless = config.headless;
+    record.targetUrl = config.targetUrl;
+    record.proxy = config.proxy;
+    record.proxyMode = config.proxyMode;
+    record.proxyService = config.proxyService;
+    markSessionActivity(record);
   } catch (error) {
-    await browser.close().catch(() => {});
-    session = emptySession();
+    try {
+      await browser.close();
+    } catch {
+      // Ignore shutdown errors during launch rollback.
+    }
+
+    resetSessionState(record);
+    markSessionSeen(record);
+    await cleanupProfileDirectory(record);
     throw error;
   }
 }
 
+function sendError(res, error) {
+  res.status(error.statusCode || 500).json({ error: error.message });
+}
+
 app.get("/api/meta", (req, res) => {
-  res.json(getServerMeta());
+  res.json(getServerMeta(req));
 });
 
-app.get("/api/health", async (req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
-    meta: getServerMeta(),
-    session: await readSessionStatus(),
+    meta: getServerMeta(req),
+    service: {
+      sessionCount: sessions.size,
+      activeSessions: countActiveSessions(),
+    },
   });
 });
 
 app.get("/api/session", async (req, res) => {
-  res.json(await readSessionStatus());
+  try {
+    const record = await getSessionRecord(req);
+    res.json(await readSessionStatus(record));
+  } catch (error) {
+    sendError(res, error);
+  }
 });
 
 app.post("/api/proxy/resolve", async (req, res) => {
   try {
+    await getSessionRecord(req);
     const resolved = await resolveProxySelection(req.body || {});
+
     res.json({
       proxyMode: resolved.proxyMode,
       proxy: redactProxy(resolved.proxy),
@@ -713,17 +1020,18 @@ app.post("/api/proxy/resolve", async (req, res) => {
         : "Direct mode selected. No proxy will be used.",
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    sendError(res, error);
   }
 });
 
 app.post("/api/session/start", async (req, res) => {
   try {
+    const record = await getSessionRecord(req);
     const targetUrl = normalizeTargetUrl(req.body?.targetUrl);
     const headless = Boolean(req.body?.headless);
     const resolved = await resolveProxySelection(req.body || {});
 
-    await startSession({
+    await startSession(record, {
       targetUrl,
       headless,
       proxy: resolved.proxy,
@@ -737,61 +1045,71 @@ app.post("/api/session/start", async (req, res) => {
 
     res.json({
       message: `Browser launched ${routeLabel} using ${resolved.proxyMode} mode.`,
-      session: await readSessionStatus(),
+      session: await readSessionStatus(record),
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    sendError(res, error);
   }
 });
 
 app.post("/api/session/navigate", async (req, res) => {
-  if (!isSessionActive()) {
-    return res
-      .status(409)
-      .json({ error: "No live browser session. Start one first." });
-  }
-
   try {
+    const record = await getSessionRecord(req);
+
+    if (!isSessionActive(record)) {
+      throw createHttpError("No live browser session. Start one first.", 409);
+    }
+
     const targetUrl = normalizeTargetUrl(req.body?.targetUrl);
-    await session.page.goto(targetUrl, {
+    await record.page.goto(targetUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 45000,
+      timeout: 45_000,
     });
-    session.targetUrl = targetUrl;
+    record.targetUrl = targetUrl;
+    markSessionActivity(record);
 
     res.json({
       message: `Navigated to ${targetUrl}`,
-      session: await readSessionStatus(),
+      session: await readSessionStatus(record),
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    sendError(res, error);
   }
 });
 
 app.post("/api/session/stop", async (req, res) => {
-  await stopSession();
-  res.json({
-    message: "Browser session stopped.",
-    session: await readSessionStatus(),
-  });
+  try {
+    const record = await getSessionRecord(req);
+    await stopSession(record);
+
+    res.json({
+      message: "Browser session stopped.",
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
 });
 
 app.get("/api/session/screenshot", async (req, res) => {
-  if (!isSessionActive()) {
-    return res.status(404).json({ error: "No active browser session." });
-  }
-
   try {
-    const screenshot = await session.page.screenshot({
+    const record = await getSessionRecord(req);
+
+    if (!isSessionActive(record)) {
+      throw createHttpError("No active browser session.", 404);
+    }
+
+    const screenshot = await record.page.screenshot({
       type: "png",
       captureBeyondViewport: false,
       fullPage: false,
     });
 
+    markSessionActivity(record);
     res.setHeader("Cache-Control", "no-store");
     res.type("png").send(screenshot);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
   }
 });
 
@@ -808,19 +1126,35 @@ app.use((req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
+const sweepTimer = setInterval(() => {
+  cleanupExpiredSessions().catch((error) => {
+    console.error("Session cleanup failed:", error);
+  });
+}, SESSION_SWEEP_INTERVAL_MS);
+
+if (typeof sweepTimer.unref === "function") {
+  sweepTimer.unref();
+}
+
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
-    await stopSession();
+    clearInterval(sweepTimer);
+    await stopAllSessions();
     process.exit(0);
   });
 }
 
 app.listen(PORT, HOST, () => {
   console.log(`Proxy PWA launcher running on ${HOST}:${PORT}`);
-  for (const accessUrl of getAccessUrls()) {
-    console.log(`Open from this network: ${accessUrl}`);
+  console.log(`Idle session timeout: ${SESSION_IDLE_TIMEOUT_MINUTES} minutes`);
+  console.log(`Max concurrent sessions: ${MAX_CONCURRENT_SESSIONS}`);
+  if (PUBLIC_BASE_URL) {
+    console.log(`Public backend URL: ${PUBLIC_BASE_URL}`);
+  }
+  for (const accessUrl of getAccessUrls({ get: () => undefined, protocol: "http" })) {
+    console.log(`Reachable URL: ${accessUrl}`);
   }
   console.log(
-    "Install the PWA in your browser, then use it as a mobile-friendly control panel for the backend browser session."
+    "Each installed PWA keeps its own private session token, so different users stay isolated on the shared backend."
   );
 });

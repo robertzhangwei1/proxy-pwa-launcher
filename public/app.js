@@ -1,5 +1,8 @@
-const SETTINGS_KEY = "proxy-pwa-launcher:settings:v4";
+const SETTINGS_KEY = "proxy-pwa-launcher:settings:v5";
+const INSTALL_TOKEN_KEY = "proxy-pwa-launcher:install-token:v1";
+const SESSION_HEADER_NAME = "X-Launcher-Token";
 const SECRET_FIELD_NAMES = new Set(["proxyPassword", "proxyServiceApiKey"]);
+const APP_CONFIG = window.PROXY_LAUNCHER_CONFIG || {};
 const IPROYAL_PRESET = {
   proxyMode: "manual",
   proxyProtocol: "http",
@@ -59,6 +62,7 @@ const appState = {
   installPrompt: null,
   pollTimer: null,
   screenshotUrl: null,
+  installToken: getInstallToken(),
 };
 
 if (platform === "ios") {
@@ -84,11 +88,66 @@ function addLog(message, tone = "info") {
   }
 }
 
+function randomHex(byteCount) {
+  const bytes = new Uint8Array(byteCount);
+
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < byteCount; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
+    ""
+  );
+}
+
+function createInstallToken() {
+  const prefix = platform || "mobile";
+
+  if (window.crypto?.randomUUID) {
+    return `${prefix}-${window.crypto.randomUUID()}-${randomHex(8)}`;
+  }
+
+  return `${prefix}-${Date.now().toString(36)}-${randomHex(16)}`;
+}
+
+function isValidInstallToken(rawValue) {
+  return /^[A-Za-z0-9._:-]{24,200}$/.test(String(rawValue || "").trim());
+}
+
+function getInstallToken() {
+  const existingToken = localStorage.getItem(INSTALL_TOKEN_KEY);
+
+  if (isValidInstallToken(existingToken)) {
+    return String(existingToken).trim();
+  }
+
+  const freshToken = createInstallToken();
+  localStorage.setItem(INSTALL_TOKEN_KEY, freshToken);
+  return freshToken;
+}
+
 function isGitHubPagesHost() {
   return location.hostname.endsWith("github.io");
 }
 
+function configuredBackendBaseUrl() {
+  return String(APP_CONFIG.defaultBackendBaseUrl || "").trim().replace(
+    /\/$/,
+    ""
+  );
+}
+
 function defaultBackendBaseUrl() {
+  const configuredBaseUrl = configuredBackendBaseUrl();
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
   return isGitHubPagesHost() ? "" : location.origin;
 }
 
@@ -137,12 +196,16 @@ function buildBackendUrl(path) {
 }
 
 async function apiRequest(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    [SESSION_HEADER_NAME]: appState.installToken,
+    ...(options.headers || {}),
+  };
+
   const response = await fetch(buildBackendUrl(path), {
-    headers: {
-      "Content-Type": "application/json",
-    },
     mode: "cors",
     ...options,
+    headers,
   });
 
   const contentType = response.headers.get("content-type") || "";
@@ -247,7 +310,9 @@ function currentProxyUrlTemplate() {
   const username =
     readFormValue("proxyUsername") || IPROYAL_PRESET.proxyUsername;
   const password = readFormValue("proxyPassword");
-  const passwordToken = password ? encodeURIComponent(password) : "<YOUR_PASSWORD>";
+  const passwordToken = password
+    ? encodeURIComponent(password)
+    : "<YOUR_PASSWORD>";
 
   return `${protocol}://${encodeURIComponent(username)}:${passwordToken}@${host}:${port}`;
 }
@@ -326,8 +391,7 @@ function restoreSettings() {
   }
 
   if (backendBaseUrlInput) {
-    backendBaseUrlInput.value =
-      saved.backendBaseUrl ?? defaultBackendBaseUrl();
+    backendBaseUrlInput.value = saved.backendBaseUrl ?? defaultBackendBaseUrl();
   }
 
   for (const [name, value] of Object.entries(saved)) {
@@ -442,7 +506,8 @@ function renderStatus(session) {
 
 function renderMeta(meta) {
   if (mobileNote) {
-    mobileNote.textContent = meta.mobileNote;
+    const notes = [meta.mobileNote, meta.sessionIsolationNote].filter(Boolean);
+    mobileNote.textContent = notes.join(" ");
   }
 
   accessUrlList.replaceChildren();
@@ -481,7 +546,13 @@ async function refreshScreenshot() {
   try {
     const response = await fetch(
       `${buildBackendUrl("api/session/screenshot")}?t=${Date.now()}`,
-      { cache: "no-store", mode: "cors" }
+      {
+        cache: "no-store",
+        mode: "cors",
+        headers: {
+          [SESSION_HEADER_NAME]: appState.installToken,
+        },
+      }
     );
 
     if (!response.ok) {
@@ -520,7 +591,10 @@ async function refreshMeta({ quiet = false } = {}) {
   renderMeta(meta);
 
   if (!quiet) {
-    addLog(`Connected to backend for ${platform}.`, "success");
+    addLog(
+      `Connected to shared backend for ${platform}. This install stays isolated from other users.`,
+      "success"
+    );
   }
 
   return meta;
@@ -742,6 +816,7 @@ if ("serviceWorker" in navigator) {
 }
 
 restoreSettings();
+addLog("This install has its own private session key for the shared backend.");
 
 if (hasConfiguredBackend()) {
   Promise.all([

@@ -1,38 +1,39 @@
 # Proxy PWA Launcher
 
-This project is now set up for a GitHub-friendly distribution model:
+This repo is set up for a real shared deployment:
 
-- GitHub Pages hosts the installable Android and iOS PWAs
-- A separate backend helper hosts the API and launches Chromium with Puppeteer
-- The installed PWA lets you enter the backend helper URL and then controls it
+- `GitHub Pages` serves the installable Android and iOS PWAs
+- `One hosted backend` runs Puppeteer and Chromium for all users
+- `Each installed app` gets its own private session token, so users do not
+  share tabs, screenshots, or proxy state
 
-## Important runtime split
-
-GitHub can host the PWA files, but GitHub Pages cannot run the Puppeteer
-backend. That means the full setup has two parts:
+## Architecture
 
 1. `Frontend`
-   - static PWA files from `public/`
-   - can be deployed to GitHub Pages
+   - static files in `public/`
+   - installable from GitHub Pages
+   - mobile-first Android and iOS shells
 2. `Backend`
    - `server.js`
-   - must run on a machine or server you control
-   - must be reachable from the phone over HTTP or HTTPS
+   - launches Chromium with proxy settings
+   - supports multiple isolated users at once
+   - cleans up idle sessions automatically
 
-## What is ready now
+The phone app is still a controller. The actual proxied browsing happens in the
+backend Chromium session.
 
-- Separate install targets:
-  - `android.html`
-  - `ios.html`
-- Relative asset paths so the app works from a GitHub Pages repo path
-- GitHub Pages workflow at:
-  - `.github/workflows/deploy-proxy-pwa-pages.yml`
-- Backend helper URL field inside the PWA
-- CORS enabled on the backend so a Pages-hosted PWA can call the helper API
+## What changed for multi-user hosting
 
-## iProyal preset from your screenshots
+- single global session replaced with per-install session isolation
+- every install stores its own random session token in local storage
+- all API requests include that token in the `X-Launcher-Token` header
+- backend sessions are cleaned up after inactivity
+- backend concurrency is capped with `MAX_CONCURRENT_SESSIONS`
+- browser profiles are isolated per user and deleted on stop/timeout
 
-The PWA preloads these values:
+## iProyal preset from the screenshots
+
+The Android and iOS PWAs preload:
 
 - host: `geo.iproyal.com`
 - port: `12321`
@@ -41,85 +42,96 @@ The PWA preloads these values:
 - location hint: `Kent, GB`
 - rotation hint: `Randomize IP`
 
-The password is still manual because the screenshots do not reveal the full
+The password is still manual because the screenshots do not expose the full
 value safely enough to hardcode.
 
-## One-tap helpers added
+## Frontend deployment
 
-Both Android and iOS PWAs now include:
+The static PWA is already GitHub Pages friendly.
 
-- `Copy Host`
-- `Copy Port`
-- `Copy Username`
-- `Paste Password`
-- `Copy Proxy URL`
-
-## Publish the PWA to GitHub Pages
-
-1. Put this code in a GitHub repo.
-2. Make sure your default branch is `main`.
-3. In GitHub, enable Pages for the repository.
-4. The workflow in `.github/workflows/deploy-proxy-pwa-pages.yml` will publish
-   `paradex-ui-bot-copy/proxy-pwa-launcher/public`.
-
-After deployment, your Pages URLs will be:
-
-- `https://<your-user>.github.io/<repo>/`
-- `https://<your-user>.github.io/<repo>/android.html`
-- `https://<your-user>.github.io/<repo>/ios.html`
-
-## Run the backend helper
-
-From:
-
-`C:\Users\rober\Documents\New project\paradex-ui-bot-copy\proxy-pwa-launcher`
-
-run:
-
-```powershell
-node server.js
-```
-
-If you want to use the PWA from GitHub Pages, the backend must be reachable from
-the phone. The PWA will ask for a backend helper URL such as:
-
-- `https://your-helper.example.com`
-- `http://192.168.1.20:4317`
-
-## Install and use on phone
-
-1. Open the GitHub Pages Android or iOS URL on your phone.
-2. Install that page as a PWA.
-3. Enter the backend helper URL.
-4. Tap `Connect Backend`.
-5. Paste the full iProyal password.
-6. Tap `Test Proxy Setup`.
-7. Tap `Launch Browser`.
-
-## Local same-origin mode
-
-If you open `android.html` or `ios.html` directly from the backend helper
-server, the backend URL field defaults to the current origin automatically.
-
-## Routes
-
-Frontend:
+Useful routes:
 
 - `/`
 - `/android.html`
 - `/ios.html`
 
-Backend:
+If you want every user to connect to one shared backend automatically, set the
+backend URL in `public/runtime-config.js`:
 
-- `/api/meta`
-- `/api/proxy/resolve`
-- `/api/session/start`
-- `/api/session/navigate`
-- `/api/session/screenshot`
-- `/api/session/stop`
+```js
+window.PROXY_LAUNCHER_CONFIG = {
+  defaultBackendBaseUrl: "https://proxy-launcher.example.com",
+};
+```
 
-## Notes
+Then push that change to GitHub Pages.
 
-- GitHub Pages makes the installable PWA easy to distribute.
-- The actual proxied browsing still happens in the backend Chromium session.
-- Passwords and API keys are not stored in local storage.
+## Backend deployment
+
+This repo now includes:
+
+- `Dockerfile`
+- `.dockerignore`
+- `.env.example`
+
+That means you can deploy the backend to any container host that supports Node
+and Puppeteer, for example your own VPS or a managed container platform.
+
+### Recommended environment variables
+
+Copy `.env.example` and adjust:
+
+- `PUBLIC_BASE_URL`
+  - the final public backend origin, for example
+    `https://proxy-launcher.example.com`
+- `CORS_ALLOW_ORIGIN`
+  - the allowed frontend origin, for example
+    `https://robertzhangwei1.github.io`
+- `MAX_CONCURRENT_SESSIONS`
+  - how many live browsers the shared service may run at once
+- `SESSION_IDLE_TIMEOUT_MINUTES`
+  - how long to keep an inactive user session alive
+
+### Local container build
+
+```powershell
+docker build -t proxy-pwa-launcher .
+docker run --env-file .env -p 4317:4317 proxy-pwa-launcher
+```
+
+### Local non-container run
+
+```powershell
+npm install
+node server.js
+```
+
+## Mobile install flow for real users
+
+1. Open the GitHub Pages Android or iOS URL on the phone.
+2. Install the page as a PWA.
+3. If `public/runtime-config.js` already points at the hosted backend, the app
+   is ready immediately.
+4. Paste the full iProyal password.
+5. Tap `Connect Backend`.
+6. Tap `Test Proxy Setup`.
+7. Tap `Launch Browser`.
+
+## API routes
+
+- `GET /api/meta`
+- `GET /api/health`
+- `GET /api/session`
+- `POST /api/proxy/resolve`
+- `POST /api/session/start`
+- `POST /api/session/navigate`
+- `POST /api/session/stop`
+- `GET /api/session/screenshot`
+
+## Important notes
+
+- The hosted backend is now shareable across multiple users.
+- Session isolation is per installed app, not per login account.
+- This is functional multi-user isolation, not a full auth system.
+- If you plan to expose the backend widely on the public internet, add your own
+  auth, rate limiting, and abuse protection in front of it.
