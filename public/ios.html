@@ -9,7 +9,7 @@
     <meta name="theme-color" content="#08131d" />
     <meta
       name="description"
-      content="iOS PWA for launching a proxied backend Chromium session with the iProyal preset."
+      content="iOS PWA for one-tap launch of the hosted proxied browser."
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -26,9 +26,9 @@
       <section class="hero panel">
         <div class="hero-copy">
           <p class="eyebrow">iOS PWA</p>
-          <h1>Install this on iPhone, then drive the backend browser with the iProyal preset.</h1>
+          <h1>Tap once to launch the proxy browser.</h1>
           <p class="hero-text" id="mobileNote">
-            The iPhone app is a controller. The proxied browsing session still runs in Chromium on the backend helper.
+            This iPhone app controls a hosted Chromium session running through the built-in proxy route.
           </p>
           <p class="platform-tip">
             Install hint: open this page in <strong>Safari</strong>, tap
@@ -41,280 +41,30 @@
         </div>
       </section>
 
-      <section class="panel stack connection-panel">
-        <div class="section-heading">
-          <p class="eyebrow">Backend Helper</p>
-          <h2>Point the PWA at your hosted backend</h2>
-        </div>
-        <p class="hint">
-          If this PWA is hosted on GitHub Pages, enter your backend helper URL
-          here, such as <code>https://your-helper.example.com</code>. If this
-          page is being served directly by the backend, you can keep the default.
-        </p>
-        <p class="hint">
-          Each installed app keeps a private session key on that device, so one
-          shared backend can safely serve many users at the same time.
-        </p>
-        <div class="backend-connect">
-          <label class="field">
-            <span>Backend helper URL</span>
-            <input
-              type="url"
-              id="backendBaseUrl"
-              name="backendBaseUrl"
-              placeholder="https://your-helper.example.com"
-            />
-          </label>
+      <section class="grid">
+        <section class="panel stack">
+          <div class="section-heading">
+            <p class="eyebrow">Quick Launch</p>
+            <h2>No setup needed</h2>
+          </div>
+          <p class="hint" id="launchHint">
+            Ready to launch through the hosted UK proxy preset.
+          </p>
           <div class="actions">
-            <button type="button" id="connectBackendButton" class="ghost">
-              Connect Backend
+            <button type="button" id="launchButton" class="primary">
+              Launch Browser
+            </button>
+            <button type="button" id="stopButton" class="ghost">Stop</button>
+            <button type="button" id="screenshotButton" class="ghost">
+              Refresh Preview
             </button>
           </div>
-        </div>
-        <p class="hint">
-          Helper-served install URLs from the connected backend:
-        </p>
-        <div id="accessUrlList" class="chip-list"></div>
-      </section>
-
-      <section class="grid">
-        <form id="launchForm" class="panel stack">
-          <div class="section-heading">
-            <p class="eyebrow">Launch Session</p>
-            <h2>Target and proxy source</h2>
-          </div>
-
-          <label class="field">
-            <span>Target URL</span>
-            <input
-              type="url"
-              name="targetUrl"
-              placeholder="https://example.com"
-              value="https://example.com"
-              required
-            />
-          </label>
-
-          <fieldset class="mode-switch">
-            <legend>Connection mode</legend>
-            <label class="mode-option">
-              <input type="radio" name="proxyMode" value="manual" checked />
-              <span>IPRoyal Manual</span>
-            </label>
-            <label class="mode-option">
-              <input type="radio" name="proxyMode" value="direct" />
-              <span>Direct</span>
-            </label>
-            <label class="mode-option">
-              <input type="radio" name="proxyMode" value="service" />
-              <span>Custom Provider API</span>
-            </label>
-          </fieldset>
-
-          <section id="manualProxyFields" class="subpanel stack">
-            <div class="preset-banner">
-              <div>
-                <p class="eyebrow">From Your Screenshots</p>
-                <h3>IPRoyal geo proxy preset</h3>
-                <p class="hint">
-                  Using <code>geo.iproyal.com</code>, port <code>12321</code>,
-                  username <code>5YzAQaZQMzdWkYTM</code>, rotation
-                  <code>Randomize IP</code>, and location hint
-                  <code>Kent, GB</code>. The password is left blank here
-                  because the screenshot view is truncated.
-                </p>
-              </div>
-              <button type="button" id="applyPresetButton" class="ghost">
-                Reapply Preset
-              </button>
-            </div>
-
-            <div class="quick-actions">
-              <button type="button" id="copyHostButton" class="ghost">
-                Copy Host
-              </button>
-              <button type="button" id="copyPortButton" class="ghost">
-                Copy Port
-              </button>
-              <button type="button" id="copyUsernameButton" class="ghost">
-                Copy Username
-              </button>
-            </div>
-
-            <div class="section-heading mini">
-              <p class="eyebrow">Manual Proxy</p>
-              <h3>Static proxy details</h3>
-            </div>
-
-            <div class="row">
-              <label class="field">
-                <span>Protocol</span>
-                <select name="proxyProtocol">
-                  <option value="http">HTTP</option>
-                  <option value="https">HTTPS</option>
-                  <option value="socks4">SOCKS4</option>
-                  <option value="socks5">SOCKS5</option>
-                </select>
-              </label>
-
-              <label class="field">
-                <span>Port</span>
-                <input type="number" name="proxyPort" placeholder="12321" min="1" max="65535" />
-              </label>
-            </div>
-
-            <label class="field">
-              <span>Host</span>
-              <input type="text" name="proxyHost" placeholder="geo.iproyal.com" />
-            </label>
-
-            <div class="row">
-              <label class="field">
-                <span>Username</span>
-                <input type="text" name="proxyUsername" placeholder="5YzAQaZQMzdWkYTM" />
-              </label>
-
-              <label class="field">
-                <span>Password</span>
-                <input
-                  type="password"
-                  name="proxyPassword"
-                  placeholder="Paste the full iProyal password from the dashboard"
-                />
-              </label>
-            </div>
-
-            <div class="quick-actions">
-              <button type="button" id="pastePasswordButton" class="ghost">
-                Paste Password
-              </button>
-              <button type="button" id="copyProxyUrlButton" class="ghost">
-                Copy Proxy URL
-              </button>
-            </div>
-            <p class="hint">
-              <code>Copy Proxy URL</code> uses the current password if you pasted one, otherwise it inserts a
-              <code>&lt;YOUR_PASSWORD&gt;</code> placeholder.
-            </p>
-
-            <label class="field">
-              <span>Bypass list</span>
-              <input
-                type="text"
-                name="proxyBypass"
-                placeholder="localhost;127.0.0.1;<local>"
-              />
-            </label>
-          </section>
-
-          <section id="serviceProxyFields" class="subpanel stack" hidden>
-            <div class="section-heading mini">
-              <p class="eyebrow">Custom Provider API</p>
-              <h3>Resolve a proxy from your own API</h3>
-            </div>
-
-            <label class="field">
-              <span>Service endpoint</span>
-              <input
-                type="url"
-                name="proxyServiceEndpoint"
-                placeholder="https://proxy-provider.example.com/session"
-              />
-            </label>
-
-            <div class="row">
-              <label class="field">
-                <span>Request method</span>
-                <select name="proxyServiceMethod">
-                  <option value="POST">POST</option>
-                  <option value="GET">GET</option>
-                </select>
-              </label>
-
-              <label class="field">
-                <span>API key</span>
-                <input type="password" name="proxyServiceApiKey" placeholder="Optional" />
-              </label>
-            </div>
-
-            <div class="row">
-              <label class="field">
-                <span>Country</span>
-                <input type="text" name="proxyServiceCountry" placeholder="gb" />
-              </label>
-
-              <label class="field">
-                <span>Region</span>
-                <input type="text" name="proxyServiceRegion" placeholder="kent" />
-              </label>
-            </div>
-
-            <label class="field">
-              <span>Sticky session ID</span>
-              <input type="text" name="proxyServiceSessionId" placeholder="Optional" />
-            </label>
-
-            <details class="advanced">
-              <summary>Advanced provider mapping</summary>
-              <div class="stack advanced-fields">
-                <div class="row">
-                  <label class="field">
-                    <span>Auth header name</span>
-                    <input type="text" name="proxyServiceAuthHeaderName" value="Authorization" />
-                  </label>
-
-                  <label class="field">
-                    <span>Auth scheme</span>
-                    <input type="text" name="proxyServiceAuthScheme" value="Bearer" />
-                  </label>
-                </div>
-
-                <label class="field">
-                  <span>Response path</span>
-                  <input type="text" name="proxyServiceResponsePath" placeholder="proxy or data.proxy" />
-                </label>
-
-                <label class="field">
-                  <span>Extra headers JSON</span>
-                  <textarea
-                    name="proxyServiceExtraHeaders"
-                    rows="3"
-                    placeholder='{"x-team-id":"demo"}'
-                  ></textarea>
-                </label>
-
-                <label class="field">
-                  <span>Extra payload JSON</span>
-                  <textarea
-                    name="proxyServiceExtraPayload"
-                    rows="4"
-                    placeholder='{"plan":"mobile","rotation":"sticky"}'
-                  ></textarea>
-                </label>
-              </div>
-            </details>
-          </section>
-
-          <label class="toggle">
-            <input type="checkbox" name="headless" checked />
-            <span>Run headless and use the screenshot preview from the PWA</span>
-          </label>
-
-          <div class="actions">
-            <button type="button" id="resolveProxyButton" class="ghost">Test Proxy Setup</button>
-            <button type="submit" class="primary">Launch Browser</button>
-            <button type="button" id="stopButton" class="ghost">Stop</button>
-          </div>
-
-          <p class="hint">
-            Non-secret settings are saved on this device. Passwords and API keys stay local to the current session.
-          </p>
-        </form>
+        </section>
 
         <section class="panel stack">
           <div class="section-heading">
             <p class="eyebrow">Live Session</p>
-            <h2>Backend browser status</h2>
+            <h2>Browser status</h2>
           </div>
 
           <div class="status-grid">
@@ -335,32 +85,15 @@
               <strong id="proxyValue">-</strong>
             </article>
             <article class="status-card">
-              <span class="status-label">Provider</span>
-              <strong id="providerValue">-</strong>
-            </article>
-            <article class="status-card">
               <span class="status-label">Launched</span>
               <strong id="launchedValue">-</strong>
             </article>
           </div>
 
-          <form id="navigateForm" class="stack mini-form">
-            <label class="field">
-              <span>Navigate live session</span>
-              <input type="url" name="navigateUrl" placeholder="https://news.ycombinator.com" />
-            </label>
-            <div class="actions">
-              <button type="submit" class="primary">Navigate</button>
-              <button type="button" id="screenshotButton" class="ghost">
-                Refresh Preview
-              </button>
-            </div>
-          </form>
-
           <div class="preview-frame">
             <img id="screenshotImage" alt="Browser session preview" hidden />
             <p id="previewPlaceholder" class="preview-placeholder">
-              Start a backend session to see a mobile-sized browser preview here.
+              Tap Launch Browser to open the hosted session and see the live preview here.
             </p>
           </div>
         </section>

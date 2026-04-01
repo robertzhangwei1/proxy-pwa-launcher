@@ -10,6 +10,8 @@ primary_region = 'ord'
 
 [env]
   CORS_ALLOW_ORIGIN = 'https://robertzhangwei1.github.io'
+  DEFAULT_HEADLESS = 'true'
+  DEFAULT_TARGET_URL = 'https://www.google.com'
   HOST = '0.0.0.0'
   MAX_CONCURRENT_SESSIONS = '4'
   PORT = '4317'

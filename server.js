@@ -35,6 +35,22 @@ const PUBLIC_BASE_URL = normalizeOptionalUrl(process.env.PUBLIC_BASE_URL);
 const CORS_ALLOWED_ORIGINS = parseAllowedOrigins(
   process.env.CORS_ALLOW_ORIGIN || "*"
 );
+const DEFAULT_TARGET_URL = normalizeTargetUrl(
+  process.env.DEFAULT_TARGET_URL || "https://www.google.com",
+  {
+    allowDefault: false,
+    label: "Default target URL",
+  }
+);
+const DEFAULT_HEADLESS = parseBooleanValue(process.env.DEFAULT_HEADLESS, true);
+const DEFAULT_PROXY = normalizeProxyConfig({
+  protocol: process.env.DEFAULT_PROXY_PROTOCOL || "http",
+  host: process.env.DEFAULT_PROXY_HOST || "",
+  port: process.env.DEFAULT_PROXY_PORT || "",
+  username: process.env.DEFAULT_PROXY_USERNAME || "",
+  password: process.env.DEFAULT_PROXY_PASSWORD || "",
+  bypass: process.env.DEFAULT_PROXY_BYPASS || "",
+});
 
 const sessions = new Map();
 let sweepInProgress = false;
@@ -69,6 +85,24 @@ function parsePositiveInt(rawValue, fallback) {
   }
 
   return parsed;
+}
+
+function parseBooleanValue(rawValue, fallback) {
+  const normalized = String(rawValue || "").trim().toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
 }
 
 function normalizeOptionalUrl(rawValue) {
@@ -148,8 +182,17 @@ function defaultPortForProtocol(protocol) {
   return 80;
 }
 
-function normalizeTargetUrl(rawUrl) {
-  const trimmed = String(rawUrl || "https://example.com").trim();
+function normalizeTargetUrl(
+  rawUrl,
+  { allowDefault = true, label = "Target URL" } = {}
+) {
+  const fallback = allowDefault ? DEFAULT_TARGET_URL : "";
+  const trimmed = String(rawUrl || fallback).trim();
+
+  if (!trimmed) {
+    throw createHttpError(`${label} must be a valid absolute URL.`);
+  }
+
   const withProtocol = /^[a-z]+:\/\//i.test(trimmed)
     ? trimmed
     : `https://${trimmed}`;
@@ -157,7 +200,7 @@ function normalizeTargetUrl(rawUrl) {
   try {
     return new URL(withProtocol).toString();
   } catch {
-    throw createHttpError("Target URL must be a valid absolute URL.");
+    throw createHttpError(`${label} must be a valid absolute URL.`);
   }
 }
 
@@ -585,6 +628,23 @@ async function fetchProxyFromService(proxyService) {
 }
 
 async function resolveProxySelection(body = {}) {
+  const hasExplicitSelection = Boolean(
+    body?.proxyMode ||
+      body?.proxyService?.endpoint ||
+      body?.proxy?.host ||
+      body?.proxy?.url ||
+      body?.proxy?.proxyUrl ||
+      body?.proxy?.server
+  );
+
+  if (!hasExplicitSelection) {
+    return {
+      proxyMode: DEFAULT_PROXY ? "manual" : "direct",
+      proxy: DEFAULT_PROXY,
+      proxyService: null,
+    };
+  }
+
   const proxyMode = normalizeProxyMode(body.proxyMode, body);
 
   if (proxyMode === "direct") {
@@ -858,10 +918,14 @@ function getServerMeta(req) {
     publicBaseUrl: PUBLIC_BASE_URL || requestOrigin(req),
     accessUrls: getAccessUrls(req),
     sessionHeaderName: SESSION_TOKEN_HEADER,
+    quickLaunchReady: true,
+    defaultTargetUrl: DEFAULT_TARGET_URL,
+    defaultHeadless: DEFAULT_HEADLESS,
+    defaultProxyMode: DEFAULT_PROXY ? "manual" : "direct",
     sessionIdleTimeoutMinutes: SESSION_IDLE_TIMEOUT_MINUTES,
     maxConcurrentSessions: MAX_CONCURRENT_SESSIONS,
     mobileNote:
-      "This mobile PWA is a control panel. The actual proxied browsing happens in backend Chromium sessions.",
+      "Tap Launch Browser to start a proxied backend session. The actual browsing runs in backend Chromium, not in the phone tab itself.",
     sessionIsolationNote:
       "Each installed app keeps a private session token on that device, so users do not share screenshots, tabs, or proxy state.",
   };
@@ -1028,7 +1092,10 @@ app.post("/api/session/start", async (req, res) => {
   try {
     const record = await getSessionRecord(req);
     const targetUrl = normalizeTargetUrl(req.body?.targetUrl);
-    const headless = Boolean(req.body?.headless);
+    const headless =
+      req.body?.headless === undefined
+        ? DEFAULT_HEADLESS
+        : Boolean(req.body?.headless);
     const resolved = await resolveProxySelection(req.body || {});
 
     await startSession(record, {
@@ -1060,7 +1127,9 @@ app.post("/api/session/navigate", async (req, res) => {
       throw createHttpError("No live browser session. Start one first.", 409);
     }
 
-    const targetUrl = normalizeTargetUrl(req.body?.targetUrl);
+    const targetUrl = normalizeTargetUrl(req.body?.targetUrl, {
+      allowDefault: false,
+    });
     await record.page.goto(targetUrl, {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
