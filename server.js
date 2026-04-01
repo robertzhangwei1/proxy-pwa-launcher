@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import puppeteer from "puppeteer";
+import { setTimeout as delay } from "timers/promises";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +31,7 @@ const MAX_CONCURRENT_SESSIONS = parsePositiveInt(
   process.env.MAX_CONCURRENT_SESSIONS,
   10
 );
+const DEFAULT_VIEWPORT = { width: 430, height: 932 };
 const SESSION_TOKEN_HEADER = "x-launcher-token";
 const PUBLIC_BASE_URL = normalizeOptionalUrl(process.env.PUBLIC_BASE_URL);
 const CORS_ALLOWED_ORIGINS = parseAllowedOrigins(
@@ -697,6 +699,7 @@ function createSessionRecord(token) {
     proxy: null,
     proxyMode: "direct",
     proxyService: null,
+    viewport: { ...DEFAULT_VIEWPORT },
     userDataDir: profileDirectoryForToken(token),
     createdAt: now,
     lastSeenAt: now,
@@ -713,6 +716,7 @@ function resetSessionState(record) {
   record.proxy = null;
   record.proxyMode = "direct";
   record.proxyService = null;
+  record.viewport = { ...DEFAULT_VIEWPORT };
   record.lastActivityAt = null;
 }
 
@@ -743,6 +747,185 @@ function sessionExpiryIso(record) {
   }
 
   return new Date(touchedAt + SESSION_IDLE_TIMEOUT_MS).toISOString();
+}
+
+function ensureActiveSession(record) {
+  if (!isSessionActive(record)) {
+    throw createHttpError("No live browser session. Start one first.", 409);
+  }
+
+  return record.page;
+}
+
+function normalizeFiniteNumber(rawValue, label) {
+  const parsed = Number(rawValue);
+
+  if (!Number.isFinite(parsed)) {
+    throw createHttpError(`${label} must be a valid number.`);
+  }
+
+  return parsed;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function normalizeRatio(rawValue, label) {
+  const parsed = normalizeFiniteNumber(rawValue, label);
+
+  if (parsed < 0 || parsed > 1) {
+    throw createHttpError(`${label} must be between 0 and 1.`);
+  }
+
+  return parsed;
+}
+
+function normalizeViewport(rawViewport = {}) {
+  const width = clamp(
+    Math.round(normalizeFiniteNumber(rawViewport.width, "Viewport width")),
+    320,
+    1440
+  );
+  const height = clamp(
+    Math.round(normalizeFiniteNumber(rawViewport.height, "Viewport height")),
+    480,
+    2560
+  );
+
+  return { width, height };
+}
+
+function viewportForRecord(record) {
+  if (
+    record?.viewport?.width &&
+    record?.viewport?.height &&
+    Number.isFinite(Number(record.viewport.width)) &&
+    Number.isFinite(Number(record.viewport.height))
+  ) {
+    return {
+      width: Math.round(Number(record.viewport.width)),
+      height: Math.round(Number(record.viewport.height)),
+    };
+  }
+
+  return { ...DEFAULT_VIEWPORT };
+}
+
+async function applyViewportToPage(record, viewport = DEFAULT_VIEWPORT) {
+  const normalizedViewport = normalizeViewport(viewport);
+  const page = record.page;
+
+  await page.setViewport({
+    width: normalizedViewport.width,
+    height: normalizedViewport.height,
+    isMobile: true,
+    hasTouch: true,
+    deviceScaleFactor: 1,
+  });
+
+  record.viewport = normalizedViewport;
+}
+
+function pointFromRatios(record, body = {}) {
+  const viewport = viewportForRecord(record);
+  const xRatio = normalizeRatio(body.xRatio, "xRatio");
+  const yRatio = normalizeRatio(body.yRatio, "yRatio");
+
+  return {
+    x: clamp(Math.round(xRatio * viewport.width), 1, viewport.width - 1),
+    y: clamp(Math.round(yRatio * viewport.height), 1, viewport.height - 1),
+  };
+}
+
+function normalizeKey(rawKey) {
+  const key = String(rawKey || "").trim();
+
+  if (!key) {
+    throw createHttpError("Key is required.");
+  }
+
+  const allowedKeys = new Set([
+    "Enter",
+    "Tab",
+    "Backspace",
+    "Delete",
+    "Escape",
+    "Space",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+  ]);
+
+  if (!allowedKeys.has(key)) {
+    throw createHttpError(`Unsupported key "${key}".`);
+  }
+
+  return key;
+}
+
+async function readNavigationState(page) {
+  let client;
+
+  try {
+    client = await page.target().createCDPSession();
+    const history = await client.send("Page.getNavigationHistory");
+
+    return {
+      canGoBack: history.currentIndex > 0,
+      canGoForward: history.currentIndex < history.entries.length - 1,
+    };
+  } catch {
+    return {
+      canGoBack: false,
+      canGoForward: false,
+    };
+  } finally {
+    if (client) {
+      await client.detach().catch(() => {});
+    }
+  }
+}
+
+async function evaluatePageMetrics(page) {
+  try {
+    return await page.evaluate(() => ({
+      scrollX: window.scrollX || 0,
+      scrollY: window.scrollY || 0,
+      pageHeight: Math.max(
+        document.documentElement?.scrollHeight || 0,
+        document.body?.scrollHeight || 0,
+        window.innerHeight || 0
+      ),
+      pageWidth: Math.max(
+        document.documentElement?.scrollWidth || 0,
+        document.body?.scrollWidth || 0,
+        window.innerWidth || 0
+      ),
+      focusedTag:
+        document.activeElement?.tagName?.toLowerCase?.() || null,
+      focusedType:
+        document.activeElement?.getAttribute?.("type") || null,
+    }));
+  } catch {
+    return {
+      scrollX: 0,
+      scrollY: 0,
+      pageHeight: 0,
+      pageWidth: 0,
+      focusedTag: null,
+      focusedType: null,
+    };
+  }
+}
+
+async function settleAfterInteraction() {
+  await delay(140);
 }
 
 async function cleanupProfileDirectory(record) {
@@ -925,7 +1108,7 @@ function getServerMeta(req) {
     sessionIdleTimeoutMinutes: SESSION_IDLE_TIMEOUT_MINUTES,
     maxConcurrentSessions: MAX_CONCURRENT_SESSIONS,
     mobileNote:
-      "Tap Launch Browser to start a proxied backend session. The actual browsing runs in backend Chromium, not in the phone tab itself.",
+      "This app streams and controls a proxied backend Chromium session. Enter any site in the URL bar, then tap, scroll, and type through the remote browser surface.",
     sessionIsolationNote:
       "Each installed app keeps a private session token on that device, so users do not share screenshots, tabs, or proxy state.",
   };
@@ -935,6 +1118,15 @@ async function readSessionStatus(record) {
   const active = isSessionActive(record);
   let title = null;
   let currentUrl = null;
+  let navigation = { canGoBack: false, canGoForward: false };
+  let pageMetrics = {
+    scrollX: 0,
+    scrollY: 0,
+    pageHeight: 0,
+    pageWidth: 0,
+    focusedTag: null,
+    focusedType: null,
+  };
 
   if (active) {
     currentUrl = record.page.url();
@@ -943,6 +1135,9 @@ async function readSessionStatus(record) {
     } catch {
       title = null;
     }
+
+    navigation = await readNavigationState(record.page);
+    pageMetrics = await evaluatePageMetrics(record.page);
   }
 
   return {
@@ -956,6 +1151,10 @@ async function readSessionStatus(record) {
     proxyMode: record.proxyMode,
     proxy: redactProxy(record.proxy),
     proxyService: redactProxyService(record.proxyService),
+    viewport: viewportForRecord(record),
+    canGoBack: navigation.canGoBack,
+    canGoForward: navigation.canGoForward,
+    pageMetrics,
     lastSeenAt: record.lastSeenAt,
     lastActivityAt: record.lastActivityAt,
     idleExpiresAt: sessionExpiryIso(record),
@@ -1005,6 +1204,8 @@ async function startSession(record, config) {
   try {
     const [page] = await browser.pages();
     const activePage = page || (await browser.newPage());
+    record.browser = browser;
+    record.page = activePage;
 
     if (config.proxy && (config.proxy.username || config.proxy.password)) {
       await activePage.authenticate({
@@ -1013,14 +1214,12 @@ async function startSession(record, config) {
       });
     }
 
-    await activePage.setViewport({ width: 430, height: 932, isMobile: true });
+    await applyViewportToPage(record, config.viewport || DEFAULT_VIEWPORT);
     await activePage.goto(config.targetUrl, {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
     });
 
-    record.browser = browser;
-    record.page = activePage;
     record.launchedAt = new Date().toISOString();
     record.headless = config.headless;
     record.targetUrl = config.targetUrl;
@@ -1101,6 +1300,7 @@ app.post("/api/session/start", async (req, res) => {
     await startSession(record, {
       targetUrl,
       headless,
+      viewport: req.body?.viewport || DEFAULT_VIEWPORT,
       proxy: resolved.proxy,
       proxyMode: resolved.proxyMode,
       proxyService: resolved.proxyService,
@@ -1122,15 +1322,12 @@ app.post("/api/session/start", async (req, res) => {
 app.post("/api/session/navigate", async (req, res) => {
   try {
     const record = await getSessionRecord(req);
-
-    if (!isSessionActive(record)) {
-      throw createHttpError("No live browser session. Start one first.", 409);
-    }
+    const page = ensureActiveSession(record);
 
     const targetUrl = normalizeTargetUrl(req.body?.targetUrl, {
       allowDefault: false,
     });
-    await record.page.goto(targetUrl, {
+    await page.goto(targetUrl, {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
     });
@@ -1139,6 +1336,185 @@ app.post("/api/session/navigate", async (req, res) => {
 
     res.json({
       message: `Navigated to ${targetUrl}`,
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/back", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+
+    await page.goBack({
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    });
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: "Went back.",
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/forward", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+
+    await page.goForward({
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    });
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: "Went forward.",
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/reload", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+
+    await page.reload({
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    });
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: "Page reloaded.",
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/resize", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    ensureActiveSession(record);
+
+    await applyViewportToPage(record, req.body?.viewport || DEFAULT_VIEWPORT);
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: `Viewport updated to ${record.viewport.width} x ${record.viewport.height}.`,
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/tap", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+    const point = pointFromRatios(record, req.body || {});
+
+    await page.touchscreen.tap(point.x, point.y);
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: `Tapped page at ${point.x}, ${point.y}.`,
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/scroll", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+    const deltaX = clamp(
+      Math.round(normalizeFiniteNumber(req.body?.deltaX ?? 0, "deltaX")),
+      -2400,
+      2400
+    );
+    const deltaY = clamp(
+      Math.round(normalizeFiniteNumber(req.body?.deltaY, "deltaY")),
+      -2400,
+      2400
+    );
+
+    await page.evaluate(
+      ({ nextDeltaX, nextDeltaY }) => {
+        window.scrollBy({
+          left: nextDeltaX,
+          top: nextDeltaY,
+          behavior: "auto",
+        });
+      },
+      { nextDeltaX: deltaX, nextDeltaY: deltaY }
+    );
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: `Scrolled ${deltaY > 0 ? "down" : "up"} by ${Math.abs(deltaY)} pixels.`,
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/type", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+    const text = String(req.body?.text || "");
+
+    if (!text.trim()) {
+      throw createHttpError("Text is required.");
+    }
+
+    await page.keyboard.type(text, { delay: 18 });
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: `Typed ${text.length} characters.`,
+      session: await readSessionStatus(record),
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/session/key", async (req, res) => {
+  try {
+    const record = await getSessionRecord(req);
+    const page = ensureActiveSession(record);
+    const key = normalizeKey(req.body?.key);
+
+    await page.keyboard.press(key);
+    await settleAfterInteraction();
+    markSessionActivity(record);
+
+    res.json({
+      message: `Pressed ${key}.`,
       session: await readSessionStatus(record),
     });
   } catch (error) {

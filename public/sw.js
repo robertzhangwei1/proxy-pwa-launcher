@@ -1,4 +1,4 @@
-const SHELL_CACHE = "proxy-pwa-shell-v3";
+const SHELL_CACHE = "proxy-pwa-shell-v4";
 
 function scopedAsset(path) {
   return new URL(path, self.registration.scope).toString();
@@ -12,6 +12,7 @@ const SHELL_ASSETS = [
   "./styles.css",
   "./runtime-config.js",
   "./app.js",
+  "./manifest.webmanifest",
   "./manifest-android.webmanifest",
   "./manifest-ios.webmanifest",
   "./icons/icon-192.svg",

@@ -6,7 +6,10 @@
   "description": "Installable PWA control panel that launches a proxied Chromium session with Puppeteer.",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "cap:sync": "npx cap sync",
+    "cap:android": "npx cap sync android",
+    "cap:ios": "npx cap sync ios"
   },
   "engines": {
     "node": ">=20"
@@ -14,5 +17,11 @@
   "dependencies": {
     "express": "^5.2.1",
     "puppeteer": "^24.34.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.3.0",
+    "@capacitor/cli": "8.3.0",
+    "@capacitor/core": "8.3.0",
+    "@capacitor/ios": "8.3.0"
   }
 }

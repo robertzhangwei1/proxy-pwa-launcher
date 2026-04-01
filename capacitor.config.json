@@ -1,0 +1,9 @@
+{
+  "appId": "com.robertzhangwei1.proxybrowser",
+  "appName": "Proxy Browser",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

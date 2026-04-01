@@ -12,15 +12,16 @@ This repo is set up for a real shared deployment:
 1. `Frontend`
    - static files in `public/`
    - installable from GitHub Pages
-   - mobile-first Android and iOS shells
+   - mobile-first Android and iOS remote-browser shells
 2. `Backend`
    - `server.js`
    - launches Chromium with proxy settings
-   - supports multiple isolated users at once
-   - cleans up idle sessions automatically
+    - supports multiple isolated users at once
+    - cleans up idle sessions automatically
 
-The phone app is still a controller. The actual proxied browsing happens in the
-backend Chromium session.
+The real browser engine still runs in the backend Chromium session, but the
+phone app is now interactive: URL bar, back/forward, reload, tap, scroll, and
+typing all go to that hosted browser.
 
 ## What changed for multi-user hosting
 
@@ -31,19 +32,18 @@ backend Chromium session.
 - backend concurrency is capped with `MAX_CONCURRENT_SESSIONS`
 - browser profiles are isolated per user and deleted on stop/timeout
 
-## iProyal preset from the screenshots
+## Built-in proxy route
 
-The Android and iOS PWAs preload:
+The shared backend is already configured with:
 
 - host: `geo.iproyal.com`
 - port: `12321`
 - username: `5YzAQaZQMzdWkYTM`
+- password: stored in Fly secrets
 - mode: manual proxy
-- location hint: `Kent, GB`
-- rotation hint: `Randomize IP`
+- location format: `country-gb_city-kent`
 
-The password is still manual because the screenshots do not expose the full
-value safely enough to hardcode.
+Users do not need to enter any proxy details in the app.
 
 ## Frontend deployment
 
@@ -165,12 +165,27 @@ node server.js
 
 1. Open the GitHub Pages Android or iOS URL on the phone.
 2. Install the page as a PWA.
-3. If `public/runtime-config.js` already points at the hosted backend, the app
-   is ready immediately.
-4. Paste the full iProyal password.
-5. Tap `Connect Backend`.
-6. Tap `Test Proxy Setup`.
-7. Tap `Launch Browser`.
+3. Open the installed app.
+4. Tap `Launch Browser`.
+5. Use the URL bar to open any website.
+6. Tap inside the live page to click or focus fields.
+7. Swipe vertically on the live page to scroll.
+8. Use the Typing Tray to send text to the focused field.
+
+## Native wrappers
+
+This repo also includes Capacitor native wrapper projects:
+
+- `android/`
+- `ios/`
+- `capacitor.config.json`
+
+The Android wrapper can be built into a debug APK and published from GitHub
+Actions.
+
+The iOS wrapper project is included in the repo and can be zipped into GitHub
+release assets, but Apple signing is still required before a native iPhone app
+can be installed outside the App Store.
 
 ## API routes
 
@@ -180,6 +195,14 @@ node server.js
 - `POST /api/proxy/resolve`
 - `POST /api/session/start`
 - `POST /api/session/navigate`
+- `POST /api/session/back`
+- `POST /api/session/forward`
+- `POST /api/session/reload`
+- `POST /api/session/resize`
+- `POST /api/session/tap`
+- `POST /api/session/scroll`
+- `POST /api/session/type`
+- `POST /api/session/key`
 - `POST /api/session/stop`
 - `GET /api/session/screenshot`
 

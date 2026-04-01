@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QA Home</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f4f6f8;
+        color: #102030;
+      }
+
+      main {
+        max-width: 430px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      input,
+      button,
+      a {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 12px 0;
+        padding: 14px 16px;
+        border-radius: 12px;
+        font: inherit;
+      }
+
+      input {
+        border: 1px solid #bcc9d4;
+      }
+
+      button,
+      a {
+        border: 0;
+        text-align: center;
+        color: white;
+        background: #1060c9;
+        text-decoration: none;
+      }
+
+      .spacer {
+        height: 1600px;
+        background: linear-gradient(180deg, rgba(16, 96, 201, 0.12), transparent);
+        border-radius: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>QA Home</h1>
+      <input id="qa-input" placeholder="Type here" />
+      <button id="qa-button" type="button">Tap Counter</button>
+      <a id="qa-next" href="/qa-browser-next.html">Open second page</a>
+      <div class="spacer"></div>
+    </main>
+    <script>
+      const input = document.querySelector("#qa-input");
+      const button = document.querySelector("#qa-button");
+      let count = 0;
+
+      input.addEventListener("input", () => {
+        document.title = `Typed ${input.value.length}`;
+      });
+
+      button.addEventListener("click", () => {
+        count += 1;
+        document.title = `Tapped ${count}`;
+      });
+
+      window.addEventListener("scroll", () => {
+        if (window.scrollY > 120) {
+          document.title = `Scrolled ${Math.round(window.scrollY)}`;
+        }
+      });
+    </script>
+  </body>
+</html>

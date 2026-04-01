@@ -1,13 +1,13 @@
 {
-  "name": "Proxy Launcher iOS",
-  "short_name": "Proxy iOS",
+  "name": "Proxy Browser iOS",
+  "short_name": "Proxy Browser",
   "start_url": "ios.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#08131d",
   "theme_color": "#08131d",
-  "description": "iPhone install target for controlling a proxied backend Chromium session with the iProyal preset.",
+  "description": "iPhone install target for the hosted remote browser shell routed through the built-in proxy backend.",
   "icons": [
     {
       "src": "icons/icon-192.svg",

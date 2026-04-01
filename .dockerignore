@@ -3,3 +3,7 @@ npm-debug.log*
 .git
 .github
 data
+android
+ios
+.flyctl-config
+local-server*.log

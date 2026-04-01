@@ -6,16 +6,16 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#20150d" />
+    <meta name="theme-color" content="#1c1209" />
     <meta
       name="description"
-      content="Android PWA for one-tap launch of the hosted proxied browser."
+      content="Android browser shell for a hosted proxied Chromium session."
     />
     <link rel="manifest" href="./manifest-android.webmanifest" />
     <link rel="icon" href="./icons/icon-192.svg" />
     <link rel="apple-touch-icon" href="./icons/icon-192.svg" />
     <link rel="stylesheet" href="./styles.css" />
-    <title>Proxy Launcher Android</title>
+    <title>Proxy Browser Android</title>
   </head>
   <body data-platform="android">
     <div class="ambient ambient-a"></div>
@@ -23,78 +23,115 @@
     <main class="shell">
       <section class="hero panel">
         <div class="hero-copy">
-          <p class="eyebrow">Android PWA</p>
-          <h1>Tap once to launch the proxy browser.</h1>
+          <p class="eyebrow">Android Browser</p>
+          <h1>Open a real remote browser through the UK proxy route.</h1>
           <p class="hero-text" id="mobileNote">
-            This Android app controls a hosted Chromium session running through the built-in proxy route.
+            This app controls a hosted Chromium session routed through the built-in proxy.
           </p>
           <p class="platform-tip">
-            Install hint: open this page in Chrome or Edge on Android and choose
-            <strong>Install app</strong> or <strong>Add to Home screen</strong>.
+            Install hint: open this page in <strong>Chrome</strong> or
+            <strong>Edge</strong>, then choose <strong>Install app</strong> or
+            <strong>Add to Home screen</strong>.
           </p>
         </div>
         <div class="hero-actions">
           <button id="installButton" class="ghost" hidden>Install Android App</button>
-          <button id="refreshButton" class="ghost">Refresh</button>
+          <button id="refreshButton" class="ghost">Refresh Status</button>
         </div>
       </section>
 
-      <section class="grid">
-        <section class="panel stack">
-          <div class="section-heading">
-            <p class="eyebrow">Quick Launch</p>
-            <h2>No setup needed</h2>
+      <section class="panel browser-panel">
+        <div class="browser-top">
+          <div class="browser-status">
+            <span id="statePill" class="status-pill">Ready</span>
+            <div class="browser-heading">
+              <p class="eyebrow">Hosted Session</p>
+              <h2 id="titleValue">Remote browser ready</h2>
+            </div>
           </div>
-          <p class="hint" id="launchHint">
-            Ready to launch through the hosted UK proxy preset.
+          <p id="launchHint" class="hint">
+            Launch the remote browser, then tap the page to focus fields, swipe vertically to scroll, and use the text tray below to type.
           </p>
-          <div class="actions">
-            <button type="button" id="launchButton" class="primary">
-              Launch Browser
-            </button>
-            <button type="button" id="stopButton" class="ghost">Stop</button>
-            <button type="button" id="screenshotButton" class="ghost">
-              Refresh Preview
-            </button>
-          </div>
-        </section>
+        </div>
 
-        <section class="panel stack">
-          <div class="section-heading">
-            <p class="eyebrow">Live Session</p>
-            <h2>Browser status</h2>
-          </div>
+        <form id="addressForm" class="address-bar">
+          <input
+            id="urlInput"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://example.com"
+            aria-label="Website URL"
+          />
+          <button id="goButton" class="primary" type="submit">Go</button>
+        </form>
 
-          <div class="status-grid">
-            <article class="status-card">
-              <span class="status-label">State</span>
-              <strong id="stateValue">Checking...</strong>
-            </article>
-            <article class="status-card">
-              <span class="status-label">Mode</span>
-              <strong id="modeValue">-</strong>
-            </article>
-            <article class="status-card">
-              <span class="status-label">Current URL</span>
-              <strong id="urlValue">-</strong>
-            </article>
-            <article class="status-card">
-              <span class="status-label">Proxy</span>
-              <strong id="proxyValue">-</strong>
-            </article>
-            <article class="status-card">
-              <span class="status-label">Launched</span>
-              <strong id="launchedValue">-</strong>
-            </article>
-          </div>
+        <div class="browser-actions">
+          <button type="button" id="launchButton" class="primary">
+            Launch Browser
+          </button>
+          <button type="button" id="backButton" class="ghost">Back</button>
+          <button type="button" id="forwardButton" class="ghost">Forward</button>
+          <button type="button" id="reloadButton" class="ghost">Reload</button>
+          <button type="button" id="stopButton" class="ghost">Stop</button>
+        </div>
 
-          <div class="preview-frame">
-            <img id="screenshotImage" alt="Browser session preview" hidden />
+        <div class="meta-strip">
+          <span class="meta-chip">
+            <strong>Route</strong>
+            <span id="modeValue">Built-in UK proxy route</span>
+          </span>
+          <span class="meta-chip">
+            <strong>Page</strong>
+            <span id="urlValue">-</span>
+          </span>
+          <span class="meta-chip">
+            <strong>Focused</strong>
+            <span id="focusedValue">None</span>
+          </span>
+        </div>
+
+        <div class="preview-shell">
+          <div class="preview-frame" id="browserSurface">
+            <img id="screenshotImage" alt="Remote browser page" hidden />
+            <div id="previewOverlay" class="preview-overlay"></div>
             <p id="previewPlaceholder" class="preview-placeholder">
-              Tap Launch Browser to open the hosted session and see the live preview here.
+              Launch Browser to open the hosted session and start browsing through the proxy.
             </p>
           </div>
-        </section>
+        </div>
+      </section>
+
+      <section class="panel keyboard-panel">
+        <div class="section-heading">
+          <p class="eyebrow">Typing Tray</p>
+          <h2>Send text to the live page</h2>
+        </div>
+        <p class="hint">
+          Tap a field in the remote page first. Then type here and send it to the focused field.
+        </p>
+
+        <div class="text-composer">
+          <input
+            id="textInput"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Type into the remote page"
+            aria-label="Text to send to remote page"
+          />
+          <button id="sendTextButton" class="primary" type="button">
+            Send Text
+          </button>
+        </div>
+
+        <div class="browser-actions compact">
+          <button type="button" class="ghost" data-key="Enter">Enter</button>
+          <button type="button" class="ghost" data-key="Backspace">Backspace</button>
+          <button type="button" class="ghost" data-key="Tab">Tab</button>
+          <button type="button" class="ghost" data-key="Escape">Esc</button>
+        </div>
       </section>
 
       <section class="panel stack">

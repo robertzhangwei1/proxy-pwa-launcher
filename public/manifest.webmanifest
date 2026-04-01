@@ -1,11 +1,11 @@
 {
-  "name": "Proxy PWA Launcher",
-  "short_name": "Proxy Launcher",
+  "name": "Proxy Browser",
+  "short_name": "Proxy Browser",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#06141e",
   "theme_color": "#08212f",
-  "description": "Installable dashboard for launching a proxied Chromium session from a local helper service.",
+  "description": "Installable remote browser shell for a hosted Chromium session routed through the proxy backend.",
   "icons": [
     {
       "src": "/icons/icon-192.svg",

@@ -1,15 +1,15 @@
-const INSTALL_TOKEN_KEY = "proxy-pwa-launcher:install-token:v2";
+const INSTALL_TOKEN_KEY = "proxy-pwa-launcher:install-token:v3";
 const SESSION_HEADER_NAME = "X-Launcher-Token";
 const APP_CONFIG = window.PROXY_LAUNCHER_CONFIG || {};
 
 const PLATFORM_CONFIG = {
   android: {
     installFallback:
-      "Install hint: open the page in Chrome or Edge on Android and choose Install app or Add to Home screen.",
+      "Open this page in Chrome or Edge on Android, then choose Install app or Add to Home screen.",
   },
   ios: {
     installFallback:
-      "Install hint: open the page in Safari, tap Share, then choose Add to Home Screen.",
+      "Open this page in Safari, tap Share, then choose Add to Home Screen.",
   },
 };
 
@@ -18,25 +18,39 @@ const platform = document.body.dataset.platform || "android";
 const installButton = document.querySelector("#installButton");
 const refreshButton = document.querySelector("#refreshButton");
 const launchButton = document.querySelector("#launchButton");
+const goButton = document.querySelector("#goButton");
+const backButton = document.querySelector("#backButton");
+const forwardButton = document.querySelector("#forwardButton");
+const reloadButton = document.querySelector("#reloadButton");
 const stopButton = document.querySelector("#stopButton");
-const screenshotButton = document.querySelector("#screenshotButton");
-const screenshotImage = document.querySelector("#screenshotImage");
-const previewPlaceholder = document.querySelector("#previewPlaceholder");
-const logList = document.querySelector("#logList");
-const mobileNote = document.querySelector("#mobileNote");
-const launchHint = document.querySelector("#launchHint");
-const stateValue = document.querySelector("#stateValue");
+const addressForm = document.querySelector("#addressForm");
+const urlInput = document.querySelector("#urlInput");
+const statePill = document.querySelector("#statePill");
+const titleValue = document.querySelector("#titleValue");
 const modeValue = document.querySelector("#modeValue");
 const urlValue = document.querySelector("#urlValue");
-const proxyValue = document.querySelector("#proxyValue");
-const launchedValue = document.querySelector("#launchedValue");
+const focusedValue = document.querySelector("#focusedValue");
+const mobileNote = document.querySelector("#mobileNote");
+const launchHint = document.querySelector("#launchHint");
+const browserSurface = document.querySelector("#browserSurface");
+const previewOverlay = document.querySelector("#previewOverlay");
+const screenshotImage = document.querySelector("#screenshotImage");
+const previewPlaceholder = document.querySelector("#previewPlaceholder");
+const textInput = document.querySelector("#textInput");
+const sendTextButton = document.querySelector("#sendTextButton");
+const logList = document.querySelector("#logList");
+const keyButtons = Array.from(document.querySelectorAll("[data-key]"));
 
 const appState = {
+  actionInFlight: false,
+  gestureStart: null,
   installPrompt: null,
-  pollTimer: null,
-  screenshotUrl: null,
   installToken: getInstallToken(),
   latestMeta: null,
+  latestSession: null,
+  pollTimer: null,
+  resizeTimer: null,
+  screenshotUrl: null,
 };
 
 if (platform === "ios") {
@@ -44,7 +58,15 @@ if (platform === "ios") {
   installButton.textContent = "Install Help";
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function addLog(message, tone = "info") {
+  if (!logList) {
+    return;
+  }
+
   const item = document.createElement("li");
   item.className = `log-item log-${tone}`;
 
@@ -57,7 +79,7 @@ function addLog(message, tone = "info") {
   item.textContent = `${stamp}  ${message}`;
   logList.prepend(item);
 
-  while (logList.children.length > 8) {
+  while (logList.children.length > 10) {
     logList.removeChild(logList.lastChild);
   }
 }
@@ -114,20 +136,20 @@ function getBackendBaseUrl() {
   return location.origin.replace(/\/$/, "");
 }
 
-function buildBackendUrl(path) {
+function buildBackendUrl(relativePath) {
   const baseUrl = getBackendBaseUrl();
-  const relativePath = String(path || "").replace(/^\/+/, "");
-  return new URL(relativePath, `${baseUrl}/`).toString();
+  const normalizedPath = String(relativePath || "").replace(/^\/+/, "");
+  return new URL(normalizedPath, `${baseUrl}/`).toString();
 }
 
-async function apiRequest(path, options = {}) {
+async function apiRequest(relativePath, options = {}) {
   const headers = {
     "Content-Type": "application/json",
     [SESSION_HEADER_NAME]: appState.installToken,
     ...(options.headers || {}),
   };
 
-  const response = await fetch(buildBackendUrl(path), {
+  const response = await fetch(buildBackendUrl(relativePath), {
     mode: "cors",
     ...options,
     headers,
@@ -145,54 +167,116 @@ async function apiRequest(path, options = {}) {
   return payload;
 }
 
-function prettyMode(value) {
-  if (value === "manual") {
-    return "IPRoyal preset";
+function prettyRouteLabel(session) {
+  if (session?.proxyMode === "manual") {
+    return "Built-in UK proxy route";
   }
 
-  if (value === "service") {
-    return "Provider API";
+  if (session?.proxyMode === "service") {
+    return "Provider API route";
   }
 
-  return "Direct";
+  return "Direct route";
 }
 
-function renderStatus(session) {
-  stateValue.textContent = session.active ? "Live browser" : "Ready";
-  modeValue.textContent = prettyMode(session.proxyMode || "manual");
-  urlValue.textContent =
-    session.currentUrl ||
-    session.targetUrl ||
-    appState.latestMeta?.defaultTargetUrl ||
-    "-";
-  proxyValue.textContent = session.proxy
-    ? `${session.proxy.host}:${session.proxy.port}`
-    : "Built-in route";
-  launchedValue.textContent = session.launchedAt
-    ? new Date(session.launchedAt).toLocaleString()
-    : "Not launched yet";
+function getFocusedLabel(session) {
+  const tag = session?.pageMetrics?.focusedTag;
+  const type = session?.pageMetrics?.focusedType;
 
-  if (!session.active) {
-    if (appState.screenshotUrl) {
-      URL.revokeObjectURL(appState.screenshotUrl);
-      appState.screenshotUrl = null;
-    }
-    screenshotImage.hidden = true;
-    previewPlaceholder.hidden = false;
+  if (!tag) {
+    return "None";
   }
+
+  if (type) {
+    return `${tag} (${type})`;
+  }
+
+  return tag;
+}
+
+function setButtonState(active, session) {
+  const busy = appState.actionInFlight;
+  const live = Boolean(active);
+
+  launchButton.disabled = busy;
+  goButton.disabled = busy;
+  backButton.disabled = busy || !live || !session?.canGoBack;
+  forwardButton.disabled = busy || !live || !session?.canGoForward;
+  reloadButton.disabled = busy || !live;
+  stopButton.disabled = busy || !live;
+  sendTextButton.disabled = busy || !live || !textInput.value.trim();
+
+  for (const button of keyButtons) {
+    button.disabled = busy || !live;
+  }
+}
+
+function clearPreview() {
+  if (appState.screenshotUrl) {
+    URL.revokeObjectURL(appState.screenshotUrl);
+    appState.screenshotUrl = null;
+  }
+
+  screenshotImage.hidden = true;
+  previewPlaceholder.hidden = false;
 }
 
 function renderMeta(meta) {
   appState.latestMeta = meta;
 
-  if (mobileNote) {
-    const notes = [meta.mobileNote, meta.sessionIsolationNote].filter(Boolean);
-    mobileNote.textContent = notes.join(" ");
+  mobileNote.textContent = [
+    meta.mobileNote,
+    meta.sessionIsolationNote,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (!appState.latestSession?.active && !urlInput.matches(":focus")) {
+    urlInput.value = meta.defaultTargetUrl || "https://www.google.com";
   }
 
-  if (launchHint) {
-    launchHint.textContent = `Ready to launch ${meta.defaultTargetUrl} through the built-in UK proxy preset.`;
+  if (!appState.latestSession?.active) {
+    launchHint.textContent =
+      "Launch the remote browser, then tap the page to focus fields, swipe vertically to scroll, and use the text tray below to type.";
   }
+}
+
+function renderSession(session) {
+  appState.latestSession = session;
+
+  const live = Boolean(session?.active);
+  statePill.textContent = live ? "Live" : "Ready";
+  statePill.className = `status-pill${live ? " live" : ""}`;
+
+  titleValue.textContent = live
+    ? session.title || "Remote browser live"
+    : "Remote browser ready";
+  modeValue.textContent = prettyRouteLabel(session);
+  urlValue.textContent =
+    session.currentUrl ||
+    session.targetUrl ||
+    appState.latestMeta?.defaultTargetUrl ||
+    "-";
+  focusedValue.textContent = getFocusedLabel(session);
+
+  if (!urlInput.matches(":focus")) {
+    urlInput.value =
+      session.currentUrl ||
+      session.targetUrl ||
+      appState.latestMeta?.defaultTargetUrl ||
+      "https://www.google.com";
+  }
+
+  if (live) {
+    launchHint.textContent =
+      "Tap anywhere in the live page to click. Swipe up or down on the page to scroll remotely.";
+  } else {
+    launchHint.textContent =
+      "Launch the remote browser, then tap the page to focus fields, swipe vertically to scroll, and use the text tray below to type.";
+    clearPreview();
+  }
+
+  setButtonState(live, session);
 }
 
 function syncPolling(active) {
@@ -202,17 +286,20 @@ function syncPolling(active) {
   }
 
   if (active) {
-    appState.pollTimer = setInterval(async () => {
-      try {
-        await refreshStatus({ quiet: true });
-      } catch {
-        // Ignore polling noise during transient network issues.
+    appState.pollTimer = setInterval(() => {
+      if (!appState.actionInFlight) {
+        refreshStatus({ quiet: true }).catch(() => {});
       }
-    }, 5000);
+    }, 2200);
   }
 }
 
 async function refreshScreenshot() {
+  if (!appState.latestSession?.active) {
+    clearPreview();
+    return;
+  }
+
   try {
     const response = await fetch(
       `${buildBackendUrl("api/session/screenshot")}?t=${Date.now()}`,
@@ -226,26 +313,22 @@ async function refreshScreenshot() {
     );
 
     if (!response.ok) {
-      if (appState.screenshotUrl) {
-        URL.revokeObjectURL(appState.screenshotUrl);
-        appState.screenshotUrl = null;
-      }
-      screenshotImage.hidden = true;
-      previewPlaceholder.hidden = false;
+      clearPreview();
       return;
     }
 
     const blob = await response.blob();
+
     if (appState.screenshotUrl) {
       URL.revokeObjectURL(appState.screenshotUrl);
     }
+
     appState.screenshotUrl = URL.createObjectURL(blob);
     screenshotImage.src = appState.screenshotUrl;
     screenshotImage.hidden = false;
     previewPlaceholder.hidden = true;
   } catch {
-    screenshotImage.hidden = true;
-    previewPlaceholder.hidden = false;
+    clearPreview();
   }
 }
 
@@ -254,7 +337,7 @@ async function refreshMeta({ quiet = false } = {}) {
   renderMeta(meta);
 
   if (!quiet) {
-    addLog("Connected to the hosted browser service.", "success");
+    addLog("Connected to the hosted proxy browser.", "success");
   }
 
   return meta;
@@ -262,7 +345,7 @@ async function refreshMeta({ quiet = false } = {}) {
 
 async function refreshStatus({ quiet = false } = {}) {
   const session = await apiRequest("api/session");
-  renderStatus(session);
+  renderSession(session);
   syncPolling(session.active);
 
   if (session.active) {
@@ -272,56 +355,373 @@ async function refreshStatus({ quiet = false } = {}) {
   if (!quiet) {
     addLog(
       session.active
-        ? `Browser is live at ${session.currentUrl || session.targetUrl}.`
-        : "Ready for one-tap launch."
+        ? `Remote browser live at ${session.currentUrl || session.targetUrl}.`
+        : "Remote browser is ready to launch."
     );
   }
 
   return session;
 }
 
-launchButton.addEventListener("click", async () => {
+function getTargetUrl() {
+  return (
+    String(urlInput.value || "").trim() ||
+    appState.latestSession?.currentUrl ||
+    appState.latestMeta?.defaultTargetUrl ||
+    "https://www.google.com"
+  );
+}
+
+function getDesiredViewport() {
+  const candidateWidth = Math.min(
+    browserSurface?.clientWidth || window.innerWidth - 24,
+    window.innerWidth - 24
+  );
+  const width = clamp(Math.round(candidateWidth), 360, 520);
+  const height = clamp(Math.round(width * 2.1), 700, 1100);
+
+  return { width, height };
+}
+
+async function runAction(relativePath, body = {}, { quiet = false } = {}) {
+  if (appState.actionInFlight) {
+    return null;
+  }
+
+  appState.actionInFlight = true;
+  setButtonState(appState.latestSession?.active, appState.latestSession);
+
   try {
-    const result = await apiRequest("api/session/start", {
+    const result = await apiRequest(relativePath, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
     });
 
-    addLog(result.message, "success");
-    renderStatus(result.session);
-    syncPolling(true);
-    await refreshScreenshot();
+    renderSession(result.session);
+
+    if (result.session?.active) {
+      await refreshScreenshot();
+    }
+
+    if (!quiet && result.message) {
+      addLog(result.message, "success");
+    }
+
+    return result;
   } catch (error) {
     addLog(error.message, "error");
+    throw error;
+  } finally {
+    appState.actionInFlight = false;
+    setButtonState(appState.latestSession?.active, appState.latestSession);
+  }
+}
+
+async function launchBrowser() {
+  await runAction(
+    "api/session/start",
+    {
+      targetUrl: getTargetUrl(),
+      viewport: getDesiredViewport(),
+    },
+    { quiet: false }
+  );
+  syncPolling(true);
+}
+
+async function navigateBrowser() {
+  if (!appState.latestSession?.active) {
+    await launchBrowser();
+    return;
+  }
+
+  await runAction(
+    "api/session/navigate",
+    {
+      targetUrl: getTargetUrl(),
+    },
+    { quiet: false }
+  );
+}
+
+async function syncViewport() {
+  if (!appState.latestSession?.active || appState.actionInFlight) {
+    return;
+  }
+
+  const currentViewport = appState.latestSession.viewport || {};
+  const nextViewport = getDesiredViewport();
+  const changed =
+    Math.abs((currentViewport.width || 0) - nextViewport.width) >= 24 ||
+    Math.abs((currentViewport.height || 0) - nextViewport.height) >= 40;
+
+  if (!changed) {
+    return;
+  }
+
+  await runAction(
+    "api/session/resize",
+    {
+      viewport: nextViewport,
+    },
+    { quiet: true }
+  );
+  addLog(
+    `Viewport synced to ${nextViewport.width} x ${nextViewport.height}.`,
+    "info"
+  );
+}
+
+function eventPoint(event) {
+  if ("clientX" in event && "clientY" in event) {
+    return { x: event.clientX, y: event.clientY };
+  }
+
+  const touch = event.changedTouches?.[0] || event.touches?.[0];
+
+  if (!touch) {
+    return null;
+  }
+
+  return { x: touch.clientX, y: touch.clientY };
+}
+
+async function handleGestureEnd(point) {
+  if (!point || !appState.gestureStart || !appState.latestSession?.active) {
+    appState.gestureStart = null;
+    return;
+  }
+
+  const rect = previewOverlay.getBoundingClientRect();
+  const startPoint = appState.gestureStart;
+  const dx = point.x - startPoint.x;
+  const dy = point.y - startPoint.y;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+
+  appState.gestureStart = null;
+
+  if (!rect.width || !rect.height) {
+    return;
+  }
+
+  if (absDy > 18 && absDy > absDx * 1.15) {
+    const remoteHeight = appState.latestSession.viewport?.height || rect.height;
+    let deltaY = Math.round((-dy * remoteHeight * 1.8) / rect.height);
+    deltaY = clamp(deltaY, -1800, 1800);
+
+    if (Math.abs(deltaY) < 80) {
+      deltaY = deltaY >= 0 ? 120 : -120;
+    }
+
+    await runAction(
+      "api/session/scroll",
+      {
+        deltaX: 0,
+        deltaY,
+      },
+      { quiet: true }
+    );
+    addLog("Scrolled the remote page.", "info");
+    return;
+  }
+
+  const xRatio = clamp((point.x - rect.left) / rect.width, 0.01, 0.99);
+  const yRatio = clamp((point.y - rect.top) / rect.height, 0.01, 0.99);
+
+  await runAction(
+    "api/session/tap",
+    {
+      xRatio,
+      yRatio,
+    },
+    { quiet: true }
+  );
+  addLog("Sent tap to the remote page.", "info");
+}
+
+function rememberGestureStart(event) {
+  if (!appState.latestSession?.active || appState.actionInFlight) {
+    return;
+  }
+
+  const point = eventPoint(event);
+
+  if (!point) {
+    return;
+  }
+
+  appState.gestureStart = point;
+  if (typeof event.pointerId === "number") {
+    try {
+      previewOverlay.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is optional on some mobile browsers.
+    }
+  }
+  event.preventDefault();
+}
+
+async function finishGesture(event) {
+  if (!appState.latestSession?.active || appState.actionInFlight) {
+    return;
+  }
+
+  const point = eventPoint(event);
+  event.preventDefault();
+  await handleGestureEnd(point);
+}
+
+launchButton.addEventListener("click", async () => {
+  try {
+    await launchBrowser();
+  } catch {
+    // Error already logged in runAction.
+  }
+});
+
+addressForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    await navigateBrowser();
+  } catch {
+    // Error already logged in runAction.
+  }
+});
+
+backButton.addEventListener("click", async () => {
+  try {
+    await runAction("api/session/back");
+  } catch {
+    // Error already logged in runAction.
+  }
+});
+
+forwardButton.addEventListener("click", async () => {
+  try {
+    await runAction("api/session/forward");
+  } catch {
+    // Error already logged in runAction.
+  }
+});
+
+reloadButton.addEventListener("click", async () => {
+  try {
+    await runAction("api/session/reload");
+  } catch {
+    // Error already logged in runAction.
   }
 });
 
 stopButton.addEventListener("click", async () => {
   try {
-    const result = await apiRequest("api/session/stop", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    addLog(result.message, "success");
-    renderStatus(result.session);
+    await runAction("api/session/stop");
     syncPolling(false);
-  } catch (error) {
-    addLog(error.message, "error");
+  } catch {
+    // Error already logged in runAction.
   }
 });
 
-screenshotButton.addEventListener("click", async () => {
-  await refreshScreenshot();
-  addLog("Preview refreshed.");
-});
-
 refreshButton.addEventListener("click", async () => {
+  if (appState.actionInFlight) {
+    return;
+  }
+
   try {
     await Promise.all([refreshMeta(), refreshStatus()]);
   } catch (error) {
     addLog(error.message, "error");
   }
 });
+
+textInput.addEventListener("input", () => {
+  setButtonState(appState.latestSession?.active, appState.latestSession);
+});
+
+sendTextButton.addEventListener("click", async () => {
+  const text = textInput.value;
+
+  if (!text.trim()) {
+    return;
+  }
+
+  try {
+    await runAction(
+      "api/session/type",
+      {
+        text,
+      },
+      { quiet: true }
+    );
+    addLog(`Typed ${text.length} characters into the remote page.`, "success");
+    textInput.value = "";
+    setButtonState(appState.latestSession?.active, appState.latestSession);
+  } catch {
+    // Error already logged in runAction.
+  }
+});
+
+for (const button of keyButtons) {
+  button.addEventListener("click", async () => {
+    try {
+      await runAction(
+        "api/session/key",
+        {
+          key: button.dataset.key,
+        },
+        { quiet: true }
+      );
+      addLog(`Pressed ${button.dataset.key} on the remote page.`, "info");
+    } catch {
+      // Error already logged in runAction.
+    }
+  });
+}
+
+previewOverlay.addEventListener("pointerdown", rememberGestureStart);
+previewOverlay.addEventListener("pointerup", (event) => {
+  finishGesture(event).catch(() => {});
+  if (typeof event.pointerId === "number") {
+    try {
+      previewOverlay.releasePointerCapture(event.pointerId);
+    } catch {
+      // Ignore browsers that do not keep pointer capture state.
+    }
+  }
+});
+previewOverlay.addEventListener("pointercancel", () => {
+  appState.gestureStart = null;
+});
+previewOverlay.addEventListener(
+  "wheel",
+  (event) => {
+    if (!appState.latestSession?.active || appState.actionInFlight) {
+      return;
+    }
+
+    event.preventDefault();
+    const rect = previewOverlay.getBoundingClientRect();
+    const remoteHeight = appState.latestSession.viewport?.height || rect.height;
+    const deltaY = clamp(
+      Math.round((event.deltaY * remoteHeight) / Math.max(rect.height, 1)),
+      -1600,
+      1600
+    );
+
+    runAction(
+      "api/session/scroll",
+      {
+        deltaX: 0,
+        deltaY,
+      },
+      { quiet: true }
+    )
+      .then(() => addLog("Scrolled the remote page.", "info"))
+      .catch(() => {});
+  },
+  { passive: false }
+);
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
@@ -334,7 +734,7 @@ installButton.addEventListener("click", async () => {
     addLog(
       PLATFORM_CONFIG[platform]?.installFallback ||
         "Install prompt is not available in this browser.",
-      "error"
+      "info"
     );
     return;
   }
@@ -347,20 +747,27 @@ installButton.addEventListener("click", async () => {
 });
 
 window.addEventListener("appinstalled", () => {
-  addLog("PWA installed successfully.", "success");
+  addLog("Installed successfully.", "success");
   installButton.hidden = true;
+});
+
+window.addEventListener("resize", () => {
+  clearTimeout(appState.resizeTimer);
+  appState.resizeTimer = setTimeout(() => {
+    syncViewport().catch(() => {});
+  }, 450);
 });
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker
     .register("./sw.js")
-    .then(() => addLog("Service worker registered.", "success"))
+    .then(() => addLog("Offline shell ready.", "success"))
     .catch((error) =>
       addLog(`Service worker registration failed: ${error.message}`, "error")
     );
 }
 
-addLog("This install is ready for one-tap launch.");
+addLog("This install controls a private hosted browser session.");
 
 Promise.all([refreshMeta({ quiet: true }), refreshStatus({ quiet: true })]).catch(
   (error) => addLog(error.message, "error")
