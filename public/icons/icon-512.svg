@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Proxy PWA Launcher icon</title>
+  <desc id="desc">Rounded square with a route line crossing a shield.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0b2737" />
+      <stop offset="100%" stop-color="#06141e" />
+    </linearGradient>
+    <linearGradient id="ink" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#5fe0c2" />
+      <stop offset="100%" stop-color="#ff8d57" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <circle cx="144" cy="150" r="38" fill="#5fe0c2" />
+  <circle cx="368" cy="352" r="38" fill="#ff8d57" />
+  <path
+    d="M144 150c63 0 58 101 139 101 46 0 59-40 85-40"
+    fill="none"
+    stroke="url(#ink)"
+    stroke-linecap="round"
+    stroke-width="40"
+  />
+  <path
+    d="M256 122l83 31v72c0 72-53 118-83 131-29-13-83-59-83-131v-72l83-31z"
+    fill="none"
+    stroke="#f2f3ea"
+    stroke-width="30"
+    stroke-linejoin="round"
+  />
+</svg>

@@ -1,0 +1,25 @@
+{
+  "name": "Proxy Launcher Android",
+  "short_name": "Proxy Android",
+  "start_url": "android.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14100d",
+  "theme_color": "#20150d",
+  "description": "Android install target for controlling a proxied backend Chromium session with the iProyal preset.",
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#08212f" />
+    <meta
+      name="description"
+      content="Choose the Android or iOS PWA for controlling a proxied backend browser."
+    />
+    <link rel="icon" href="./icons/icon-192.svg" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>Proxy Launcher</title>
+  </head>
+  <body data-platform="chooser">
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <main class="shell">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Choose Your Install</p>
+          <h1>Pick the mobile PWA that matches your phone.</h1>
+          <p class="hero-text">
+            Both apps control the same backend Chromium launcher and both use the
+            iProyal proxy preset from your screenshots. The difference is the
+            install flow and presentation for each platform.
+          </p>
+        </div>
+      </section>
+
+      <section class="platform-grid">
+        <a class="panel platform-card android-card" href="./android.html">
+          <p class="eyebrow">Android PWA</p>
+          <h2>Install from Chrome or Edge on Android</h2>
+          <p class="hero-text">
+            Uses an Android-focused shell with the iProyal proxy preset filled
+            in. Open this page on Android, then tap Install app or Add to Home
+            screen.
+          </p>
+          <span class="platform-link">Open Android installer</span>
+        </a>
+
+        <a class="panel platform-card ios-card" href="./ios.html">
+          <p class="eyebrow">iOS PWA</p>
+          <h2>Install from Safari on iPhone</h2>
+          <p class="hero-text">
+            Uses an iPhone-friendly shell with iOS-specific onboarding. Open
+            this page in Safari, then use Share and Add to Home Screen.
+          </p>
+          <span class="platform-link">Open iOS installer</span>
+        </a>
+      </section>
+    </main>
+  </body>
+</html>

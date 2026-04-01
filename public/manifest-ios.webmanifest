@@ -1,0 +1,25 @@
+{
+  "name": "Proxy Launcher iOS",
+  "short_name": "Proxy iOS",
+  "start_url": "ios.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#08131d",
+  "theme_color": "#08131d",
+  "description": "iPhone install target for controlling a proxied backend Chromium session with the iProyal preset.",
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
