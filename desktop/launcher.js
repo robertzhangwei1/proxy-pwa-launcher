@@ -15,10 +15,49 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 
 const activeSessions = new Map();
 
+function macExecutableDir() {
+  if (process.platform !== "darwin") {
+    return "";
+  }
+
+  return path.dirname(process.execPath);
+}
+
+function macAppBundleDir() {
+  const executableDir = macExecutableDir();
+
+  if (!executableDir) {
+    return "";
+  }
+
+  return path.resolve(executableDir, "..", "..");
+}
+
+function macAppSiblingDir() {
+  const bundleDir = macAppBundleDir();
+
+  if (!bundleDir) {
+    return "";
+  }
+
+  return path.dirname(bundleDir);
+}
+
+function isConfiguredSecret(rawValue) {
+  const normalized = String(rawValue || "").trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized.toLowerCase() !== "replace-with-real-password";
+}
+
 function readDesktopConfigFile() {
   const candidatePaths = [
     path.join(process.cwd(), "proxy-browser.desktop.json"),
     path.join(path.dirname(process.execPath), "proxy-browser.desktop.json"),
+    path.join(macAppSiblingDir(), "proxy-browser.desktop.json"),
     path.join(PROJECT_ROOT, "proxy-browser.desktop.json"),
   ];
 
@@ -98,6 +137,23 @@ const WINDOWS_BROWSER_CANDIDATES = [
   },
 ];
 
+const MAC_BROWSER_CANDIDATES = [
+  {
+    id: "chrome",
+    name: "Google Chrome",
+    paths: [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ],
+  },
+  {
+    id: "edge",
+    name: "Microsoft Edge",
+    paths: [
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ],
+  },
+];
+
 function normalizeTargetUrl(rawUrl) {
   const trimmed = String(rawUrl || DEFAULT_TARGET_URL).trim();
   const withProtocol = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -115,6 +171,10 @@ async function pathExists(candidatePath) {
 
 export async function discoverBrowsers() {
   const found = [];
+  const platformCandidates =
+    process.platform === "darwin"
+      ? MAC_BROWSER_CANDIDATES
+      : WINDOWS_BROWSER_CANDIDATES;
 
   if (CONFIGURED_BROWSER_PATH && (await pathExists(CONFIGURED_BROWSER_PATH))) {
     found.push({
@@ -124,7 +184,7 @@ export async function discoverBrowsers() {
     });
   }
 
-  for (const candidate of WINDOWS_BROWSER_CANDIDATES) {
+  for (const candidate of platformCandidates) {
     for (const candidatePath of candidate.paths) {
       if (await pathExists(candidatePath)) {
         if (found.some((browser) => browser.path === candidatePath)) {
@@ -157,7 +217,12 @@ function proxyConfig() {
 
 function proxyReady() {
   const config = proxyConfig();
-  return Boolean(config.host && config.port && config.username && config.password);
+  return Boolean(
+    config.host &&
+      config.port &&
+      config.username &&
+      isConfiguredSecret(config.password)
+  );
 }
 
 function redactProxy(config) {
@@ -170,7 +235,7 @@ function redactProxy(config) {
     host: config.host,
     port: config.port,
     username: config.username ? `${config.username.slice(0, 4)}...` : "",
-    passwordSet: Boolean(config.password),
+    passwordSet: isConfiguredSecret(config.password),
     bypass: config.bypass,
   };
 }
@@ -186,7 +251,23 @@ function buildUpstreamProxyUrl(config) {
 }
 
 function sessionRoot() {
-  return path.join(os.homedir(), "AppData", "Local", "ProxyBrowserDesktop", "sessions");
+  if (process.platform === "darwin") {
+    return path.join(
+      os.homedir(),
+      "Library",
+      "Application Support",
+      "ProxyBrowserDesktop",
+      "sessions"
+    );
+  }
+
+  return path.join(
+    os.homedir(),
+    "AppData",
+    "Local",
+    "ProxyBrowserDesktop",
+    "sessions"
+  );
 }
 
 function createSessionId() {
@@ -234,6 +315,18 @@ function browserArgs({ targetUrl, profileDir, localProxyUrl, bypass }) {
 }
 
 async function killProcessTree(pid) {
+  if (process.platform === "darwin") {
+    await new Promise((resolve) => {
+      const killer = spawn("sh", ["-lc", `pkill -TERM -P ${pid} >/dev/null 2>&1; kill -TERM ${pid} >/dev/null 2>&1 || true`], {
+        stdio: "ignore",
+      });
+
+      killer.once("exit", () => resolve());
+      killer.once("error", () => resolve());
+    });
+    return;
+  }
+
   await new Promise((resolve) => {
     const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
       windowsHide: true,

@@ -11,6 +11,8 @@
     "dev": "node server.js",
     "desktop:dev": "electron .",
     "desktop:dir": "electron-builder --win dir",
+    "desktop:dir:win": "electron-builder --win dir",
+    "desktop:dir:mac": "electron-builder --mac dir",
     "desktop:pack": "node desktop/package-win-bundle.mjs",
     "cap:sync": "npx cap sync",
     "cap:android": "npx cap sync android",
@@ -56,6 +58,12 @@
         "dir"
       ],
       "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "category": "public.app-category.utilities"
     }
   }
 }

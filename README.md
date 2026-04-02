@@ -201,7 +201,7 @@ can be installed outside the App Store.
 
 ## Desktop launcher
 
-The Windows desktop app lives in:
+The desktop app lives in:
 
 - `desktop/main.js`
 - `desktop/launcher.js`
@@ -209,7 +209,7 @@ The Windows desktop app lives in:
 
 What it does:
 
-- detects local Chrome and Edge installs
+- detects local Chrome and Edge installs on Windows and macOS
 - creates a local authenticated proxy bridge
 - launches a real Chrome or Edge window with `--proxy-server`
 - keeps the launched browser in an isolated profile directory
@@ -244,6 +244,28 @@ For a shareable portable setup, ship both:
 
 After extraction, keep `proxy-browser.desktop.json` in the same folder as
 `Proxy Browser Desktop.exe`.
+
+Build a mac app folder locally on macOS:
+
+```bash
+npm install
+npm run desktop:dir:mac
+```
+
+GitHub Actions also publishes a downloadable unsigned mac bundle release asset.
+Keep `proxy-browser.desktop.json` in the same extracted folder as
+`Proxy Browser Desktop.app`.
+
+Because the mac app is unsigned, macOS may require:
+
+1. Right click the app.
+2. Choose `Open`.
+
+Or remove the quarantine flag manually:
+
+```bash
+xattr -dr com.apple.quarantine "Proxy Browser Desktop.app"
+```
 
 ## API routes
 
