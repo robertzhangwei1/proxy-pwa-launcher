@@ -67,7 +67,9 @@ jobs:
         run: |
           mkdir -p dist/macos-bundle
           cp proxy-browser.desktop.example.json dist/macos-bundle/proxy-browser.desktop.json
-          cp -R "desktop-dist/mac/Proxy Browser Desktop.app" dist/macos-bundle/
+          APP_PATH="$(find desktop-dist -maxdepth 2 -name '*.app' -print -quit)"
+          test -n "$APP_PATH"
+          cp -R "$APP_PATH" dist/macos-bundle/
           ditto -c -k --sequesterRsrc --keepParent dist/macos-bundle dist/proxy-browser-desktop-mac-bundle.zip
 
       - name: Upload mac desktop artifact
