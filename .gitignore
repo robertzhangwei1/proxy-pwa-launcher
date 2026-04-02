@@ -8,3 +8,5 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 local-server*.log
+desktop-dist/
+proxy-browser.desktop.json

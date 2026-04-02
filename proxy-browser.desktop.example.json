@@ -1,0 +1,12 @@
+{
+  "defaultTargetUrl": "https://www.google.com",
+  "browserPath": "",
+  "proxy": {
+    "protocol": "http",
+    "host": "geo.iproyal.com",
+    "port": "12321",
+    "username": "5YzAQaZQMzdWkYTM",
+    "password": "replace-with-real-password",
+    "bypass": "localhost;127.0.0.1;<local>"
+  }
+}

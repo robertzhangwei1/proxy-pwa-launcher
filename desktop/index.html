@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>Proxy Browser Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <main class="shell">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Desktop Launcher</p>
+          <h1>Launch a real Chrome or Edge window through the proxy.</h1>
+          <p class="hero-text">
+            This desktop app opens a local browser process with a dedicated profile and routes that browser instance through a local authenticated proxy bridge.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="refreshButton" class="ghost">Refresh</button>
+          <button id="stopAllButton" class="ghost">Stop All</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <section class="panel stack">
+          <div class="section-heading">
+            <p class="eyebrow">Launch</p>
+            <h2>Open a local browser window</h2>
+          </div>
+
+          <label class="field">
+            <span>Browser</span>
+            <select id="browserSelect"></select>
+          </label>
+
+          <label class="field">
+            <span>Website URL</span>
+            <input
+              id="urlInput"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://example.com"
+            />
+          </label>
+
+          <p id="launchHint" class="hint">
+            Launch opens a separate local browser profile so the proxied window stays isolated from your everyday browser.
+          </p>
+
+          <div class="actions">
+            <button id="launchButton" class="primary">Launch Browser</button>
+          </div>
+        </section>
+
+        <section class="panel stack">
+          <div class="section-heading">
+            <p class="eyebrow">Status</p>
+            <h2>Desktop route health</h2>
+          </div>
+
+          <div class="status-grid">
+            <article class="status-card">
+              <span class="status-label">Proxy</span>
+              <strong id="proxyStatusValue">Checking...</strong>
+            </article>
+            <article class="status-card">
+              <span class="status-label">Available Browsers</span>
+              <strong id="browserStatusValue">Checking...</strong>
+            </article>
+            <article class="status-card wide">
+              <span class="status-label">Route</span>
+              <strong id="routeValue">-</strong>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel stack">
+        <div class="section-heading">
+          <p class="eyebrow">Live Sessions</p>
+          <h2>Launched local browsers</h2>
+        </div>
+        <div id="sessionList" class="session-list"></div>
+      </section>
+
+      <section class="panel stack">
+        <div class="section-heading">
+          <p class="eyebrow">Activity</p>
+          <h2>Launcher log</h2>
+        </div>
+        <ul id="logList" class="log-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

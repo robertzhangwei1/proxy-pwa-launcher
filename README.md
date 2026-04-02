@@ -6,6 +6,8 @@ This repo is set up for a real shared deployment:
 - `One hosted backend` runs Puppeteer and Chromium for all users
 - `Each installed app` gets its own private session token, so users do not
   share tabs, screenshots, or proxy state
+- `Desktop Electron launcher` can open a real local Chrome or Edge window
+  through the proxy route
 
 ## Architecture
 
@@ -18,10 +20,17 @@ This repo is set up for a real shared deployment:
    - launches Chromium with proxy settings
     - supports multiple isolated users at once
     - cleans up idle sessions automatically
+3. `Desktop`
+   - `desktop/`
+   - launches a real local browser window on Windows
+   - uses a local authenticated proxy bridge for Chrome or Edge
 
 The real browser engine still runs in the backend Chromium session, but the
 phone app is now interactive: URL bar, back/forward, reload, tap, scroll, and
 typing all go to that hosted browser.
+
+On desktop, the app launches a real local browser process instead of a hosted
+remote one.
 
 ## What changed for multi-user hosting
 
@@ -44,6 +53,9 @@ The shared backend is already configured with:
 - location format: `country-gb_city-kent`
 
 Users do not need to enter any proxy details in the app.
+
+The desktop launcher reuses the same route values from environment variables,
+but it reads them locally and does not publish the password in Git.
 
 ## Frontend deployment
 
@@ -186,6 +198,52 @@ Actions.
 The iOS wrapper project is included in the repo and can be zipped into GitHub
 release assets, but Apple signing is still required before a native iPhone app
 can be installed outside the App Store.
+
+## Desktop launcher
+
+The Windows desktop app lives in:
+
+- `desktop/main.js`
+- `desktop/launcher.js`
+- `desktop/index.html`
+
+What it does:
+
+- detects local Chrome and Edge installs
+- creates a local authenticated proxy bridge
+- launches a real Chrome or Edge window with `--proxy-server`
+- keeps the launched browser in an isolated profile directory
+
+Run it locally:
+
+```powershell
+npm install
+$env:DEFAULT_PROXY_PASSWORD="replace-with-real-password"
+npm run desktop:dev
+```
+
+Or place a local sidecar config file next to the app:
+
+- copy `proxy-browser.desktop.example.json`
+- rename it to `proxy-browser.desktop.json`
+- fill in the real password
+
+Package a Windows portable build:
+
+```powershell
+$env:DEFAULT_PROXY_PASSWORD="replace-with-real-password"
+npm run desktop:pack
+```
+
+The resulting desktop bundle is written to `desktop-dist/` as a zipped unpacked
+Electron app.
+
+For a shareable portable setup, ship both:
+
+- `desktop-dist/proxy-browser-desktop-bundle.zip`
+
+After extraction, keep `proxy-browser.desktop.json` in the same folder as
+`Proxy Browser Desktop.exe`.
 
 ## API routes
 

@@ -3,10 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "desktop/main.js",
+  "author": "Robert <robert@aylab.io>",
   "description": "Installable PWA control panel that launches a proxied Chromium session with Puppeteer.",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "desktop:dev": "electron .",
+    "desktop:dir": "electron-builder --win dir",
+    "desktop:pack": "node desktop/package-win-bundle.mjs",
     "cap:sync": "npx cap sync",
     "cap:android": "npx cap sync android",
     "cap:ios": "npx cap sync ios"
@@ -15,13 +20,42 @@
     "node": ">=20"
   },
   "dependencies": {
+    "dotenv": "^17.4.0",
     "express": "^5.2.1",
+    "proxy-chain": "^2.7.1",
     "puppeteer": "^24.34.0"
   },
   "devDependencies": {
     "@capacitor/android": "8.3.0",
     "@capacitor/cli": "8.3.0",
     "@capacitor/core": "8.3.0",
-    "@capacitor/ios": "8.3.0"
+    "@capacitor/ios": "8.3.0",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.robertzhangwei1.proxybrowser.desktop",
+    "productName": "Proxy Browser Desktop",
+    "npmRebuild": false,
+    "directories": {
+      "output": "desktop-dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!android{,/**/*}",
+      "!ios{,/**/*}",
+      "!public{,/**/*}",
+      "!data{,/**/*}",
+      "!.flyctl-config{,/**/*}",
+      "!desktop-dist{,/**/*}"
+    ],
+    "win": {
+      "target": [
+        "dir"
+      ],
+      "signAndEditExecutable": false
+    }
   }
 }
