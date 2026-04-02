@@ -213,6 +213,8 @@ What it does:
 - creates a local authenticated proxy bridge
 - launches a real Chrome or Edge window with `--proxy-server`
 - keeps the launched browser in an isolated profile directory
+- lets users change proxy host, port, username, password, bypass list, and default startup URL from inside the desktop app
+- saves desktop proxy settings locally per device for future launches
 
 Run it locally:
 
@@ -227,6 +229,10 @@ Or place a local sidecar config file next to the app:
 - copy `proxy-browser.desktop.example.json`
 - rename it to `proxy-browser.desktop.json`
 - fill in the real password
+
+The desktop app can also save proxy settings from its own UI. Those saved
+settings are written locally for that device and used automatically on the next
+launch.
 
 Package a Windows portable build:
 

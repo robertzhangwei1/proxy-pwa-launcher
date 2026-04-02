@@ -117,6 +117,10 @@ body {
   gap: 0.75rem;
 }
 
+.actions {
+  flex-wrap: wrap;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
@@ -140,6 +144,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
 }
 
 input,
@@ -255,5 +269,13 @@ button:disabled {
 
   .hero {
     flex-direction: column;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-wide {
+    grid-column: auto;
   }
 }

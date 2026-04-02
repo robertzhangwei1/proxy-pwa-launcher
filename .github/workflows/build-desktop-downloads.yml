@@ -105,10 +105,12 @@ jobs:
           body: |
             Windows:
             - `proxy-browser-desktop-bundle.zip` contains the working Windows desktop launcher bundle.
+            - Users can change proxy settings directly inside the desktop app UI.
 
             Mac:
             - `proxy-browser-desktop-mac-bundle.zip` contains the unsigned mac desktop launcher bundle.
-            - The included `proxy-browser.desktop.json` is a template. Add the real proxy password before first launch.
+            - Users can change proxy settings directly inside the desktop app UI.
+            - The included `proxy-browser.desktop.json` is an optional template if you prefer file-based config.
             - Because the mac app is unsigned, macOS may require Right Click -> Open the first time.
           files: |
             dist/windows/proxy-browser-desktop-bundle.zip

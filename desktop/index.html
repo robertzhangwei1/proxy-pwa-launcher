@@ -85,6 +85,102 @@
 
       <section class="panel stack">
         <div class="section-heading">
+          <p class="eyebrow">Proxy Settings</p>
+          <h2>Change the desktop proxy route</h2>
+        </div>
+
+        <form id="settingsForm" class="stack">
+          <div class="settings-grid">
+            <label class="field">
+              <span>Protocol</span>
+              <select id="protocolSelect">
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Port</span>
+              <input
+                id="portInput"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="12321"
+              />
+            </label>
+
+            <label class="field field-wide">
+              <span>Host</span>
+              <input
+                id="hostInput"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="geo.iproyal.com"
+              />
+            </label>
+
+            <label class="field">
+              <span>Username</span>
+              <input
+                id="usernameInput"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Proxy username"
+              />
+            </label>
+
+            <label class="field">
+              <span>Password</span>
+              <input
+                id="passwordInput"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Proxy password"
+              />
+            </label>
+
+            <label class="field field-wide">
+              <span>Bypass List</span>
+              <input
+                id="bypassInput"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="localhost;127.0.0.1;&lt;local&gt;"
+              />
+            </label>
+
+            <label class="field field-wide">
+              <span>Default Website URL</span>
+              <input
+                id="defaultUrlInput"
+                type="text"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://www.google.com"
+              />
+            </label>
+          </div>
+
+          <p id="settingsHint" class="hint">
+            Settings are stored locally on this device and used for future launches.
+          </p>
+
+          <div class="actions">
+            <button id="saveSettingsButton" class="primary" type="submit">Save Proxy Settings</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel stack">
+        <div class="section-heading">
           <p class="eyebrow">Live Sessions</p>
           <h2>Launched local browsers</h2>
         </div>
